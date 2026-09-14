@@ -3,9 +3,13 @@ import pandas as pd
 import pydeck as pdk
 import plotly.express as px
 import hashlib
+import urllib.parse
 from datetime import datetime
-from data_engine import fetch_pipeline_data, generate_analytical_metrics, save_cargo_to_sheet, MANAGERS, fetch_supplier_pool, add_supplier_to_sheet
-from jarvis_ai import generate_executive_briefing, query_jarvis, intelligent_match_reqs, generate_single_rfq_email
+from data_engine import (
+    fetch_pipeline_data, generate_analytical_metrics, 
+    save_cargo_to_sheet, MANAGERS, fetch_supplier_pool, add_supplier_to_sheet
+)
+from jarvis_ai import generate_executive_briefing, query_jarvis, intelligent_match_and_draft_rfqs
 
 try:
     from voice_engine import generate_jarvis_audio
@@ -114,13 +118,10 @@ with st.sidebar:
             try:
                 df_tr, metrics_tr = get_cached_trade_data()
                 ai_response = query_jarvis(user_msg, current_user["role"], metrics_tr, df_tr, "OZ GLOBAL TRADE")
-                
                 try:
                     audio_file_path = generate_jarvis_audio(ai_response)
-                except Exception as e:
+                except Exception:
                     audio_file_path = ""
-                    print(f"Ses motoru hatası: {e}")
-                    
             except Exception as e:
                 ai_response = f"Hata: {e}"
                 audio_file_path = ""
@@ -410,12 +411,17 @@ else:
     with tab5:
         df_suppliers = fetch_supplier_pool()
         
-        col_form, col_ai = st.columns([1, 1.2])
+        col_form, col_ai = st.columns([1, 1.3])
         
         with col_form:
             st.subheader("➕ Yeni Katalog / Tedarikçi Ekle")
             with st.form("supplier_form", clear_on_submit=True):
-                s_kat = st.selectbox("Kategori:", ["Savunma & Havacılık", "Aviyonik & Elektronik", "İtki & Güç Sistemleri", "Makina & Metal Sanayi", "Karbon & Kompozit", "Otomotiv & Araç Parçaları", "Ağır Sanayi & Eğlence", "Tekstil & Medikal", "Gıda & Tarım", "Yapı & İnşaat", "Lojistik & Ambalaj", "Genel Ticaret / Diğer"])
+                s_kat = st.selectbox("Kategori:", [
+                    "Savunma & Havacılık", "Aviyonik & Elektronik", "İtki & Güç Sistemleri", 
+                    "Makina & Metal Sanayi", "Karbon & Kompozit", "Otomotiv & Araç Parçaları", 
+                    "Ağır Sanayi & Eğlence", "Tekstil & Medikal", "Gıda & Tarım", 
+                    "Yapı & İnşaat", "Lojistik & Ambalaj", "Genel Ticaret / Diğer"
+                ])
                 s_urun = st.text_input("Anahtar Kelimeler / Ürünler (Örn: GEPRC, SIYI, LIDAR, Motor):")
                 s_firma = st.text_input("Tedarikçi Firma Adı:")
                 s_ulke = st.text_input("Ülke / Bölge:")
@@ -435,34 +441,63 @@ else:
                 st.dataframe(df_suppliers, use_container_width=True)
         
         with col_ai:
-            st.subheader("🧠 Akıllı REQ Eşleştirme (Jarvis Semantic)")
-            st.markdown("Müşteriden gelen karmaşık ürün listesini (marka ve model kodlarıyla birlikte) buraya yapıştırın. Jarvis havuzla akıllı eşleştirme yapsın.")
-            req_input = st.text_area("Talep (REQ) Listesi:", height=150, placeholder="Örn:\n2 EFT E410P Only Propellers set\n8 GEPRC GR1404 4500KV Motor\n11 TF02-PRO (LIDAR)")
+            st.subheader("⚡ Otonom REQ & Gmail RFQ İstasyonu")
+            req_input = st.text_area(
+                "Müşteri Talep (REQ) Listesini Yapıştırın:", 
+                height=140, 
+                placeholder="Örn:\nEFT E410P Only Propellers set\nGEPRC GR1404 4500KV Motor\nSIYI HM30 REPEATER Combo\nTF02-PRO (LIDAR)"
+            )
             
-            if st.button("⚡ Akıllı Eşleştirme Analizi Yap", use_container_width=True):
+            if st.button("🚀 Eşleştir ve Gmail RFQ Butonlarını Oluştur", use_container_width=True):
                 if req_input and not df_suppliers.empty:
-                    with st.spinner("Jarvis teknik özellikleri ve markaları analiz ediyor..."):
+                    with st.spinner("Tedarikçiler taranıyor ve Gmail taslakları oluşturuluyor..."):
                         suppliers_json = df_suppliers.to_json(orient="records", force_ascii=False)
-                        match_result = intelligent_match_reqs(req_input, suppliers_json)
-                        st.session_state["ai_match_result"] = match_result
+                        match_results = intelligent_match_and_draft_rfqs(req_input, suppliers_json)
+                        st.session_state["rfq_match_list"] = match_results
                 elif df_suppliers.empty:
                     st.warning("Tedarikçi havuzunuz şu an boş.")
                 else:
                     st.warning("Lütfen talep listesi girin.")
 
-            if "ai_match_result" in st.session_state:
+            if "rfq_match_list" in st.session_state and st.session_state["rfq_match_list"]:
                 st.markdown("---")
-                st.subheader("🎯 Eşleşme Sonuçları")
-                st.markdown(st.session_state["ai_match_result"])
+                results = st.session_state["rfq_match_list"]
                 
-                st.markdown("---")
-                st.subheader("✉️ Seçmeli RFQ Mail Üretici")
-                mail_sup = st.selectbox("Mail Yazılacak Tedarikçi Firma:", df_suppliers["Tedarikçi Firma"].tolist() if not df_suppliers.empty else [])
-                mail_item = st.text_input("İlgili Ürün / Kalem Açıklaması:")
-                
-                if st.button("🚀 Bu Firma İçin İngilizce RFQ Taslağı Oluştur"):
-                    if mail_sup and mail_item:
-                        sup_row = df_suppliers[df_suppliers["Tedarikçi Firma"] == mail_sup].iloc[0]
-                        with st.spinner("Mail yazılıyor..."):
-                            draft = generate_single_rfq_email(mail_sup, sup_row.get("İletişim Kişisi", ""), mail_item)
-                            st.code(draft, language="markdown")
+                # Talebe göre grupla
+                grouped = {}
+                for item in results:
+                    t = item.get("talep", "Genel Talep")
+                    grouped.setdefault(t, []).append(item)
+
+                for product, sups in grouped.items():
+                    with st.container(border=True):
+                        st.markdown(f"#### 🎯 **Talep:** `{product}`")
+                        
+                        for s in sups:
+                            firma = s.get("tedarikci", "-")
+                            email = s.get("eposta", "").strip()
+                            kisi = s.get("kisi", "Sales Team")
+                            ulke = s.get("ulke", "-")
+                            aciklama = s.get("aciklama", "")
+                            subject = s.get("mail_subject", f"RFQ - {product}")
+                            body = s.get("mail_body", "")
+
+                            c_info, c_btn = st.columns([3, 1.3])
+                            with c_info:
+                                st.markdown(f"**🏢 {firma}** ({ulke}) &nbsp;•&nbsp; 👤 *{kisi}*")
+                                if email:
+                                    st.caption(f"📧 `{email}` | 💡 {aciklama}")
+                                else:
+                                    st.caption(f"⚠️ *E-posta kayıtlı değil* | 💡 {aciklama}")
+                            
+                            with c_btn:
+                                if email and "@" in email:
+                                    # Doğrudan Gmail Web Compose URL linki
+                                    gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={urllib.parse.quote(email)}&su={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
+                                    st.link_button("✉️ Gmail'de Gönder", gmail_url, type="primary", use_container_width=True)
+                                else:
+                                    st.button("❌ E-Posta Eksik", disabled=True, use_container_width=True, key=f"dis_{firma}_{product}")
+
+                            with st.expander(f"📝 {firma} İçin Hazırlanan Mail Taslağını İncele"):
+                                st.markdown(f"**Konu:** `{subject}`")
+                                st.text(body)

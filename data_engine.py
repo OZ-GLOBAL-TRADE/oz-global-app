@@ -25,19 +25,24 @@ SPREADSHEET_KEY = get_config_val("SPREADSHEET_KEY", "1uNEFwXCZgfjmg6V49cOKGfLiM5
 @st.cache_resource(show_spinner=False)
 def get_sheets_client():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    try:
-        if hasattr(st, "secrets") and "gcp_service_account" in st.secrets:
+    
+    # 1. Bulut Ortamı: Streamlit Secrets Kontrolü
+    if hasattr(st, "secrets") and "gcp_service_account" in st.secrets:
+        try:
             creds_dict = dict(st.secrets["gcp_service_account"])
             creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
             return gspread.authorize(creds)
-    except Exception:
-        pass
+        except Exception as e:
+            # TOML format hatası varsa sistemi sessizce geçmek yerine hatayı fırlat
+            raise ValueError(f"Streamlit Secrets okundu ancak kimlik doğrulanamadı. TOML formatınızı kontrol edin. Hata detayı: {e}")
 
+    # 2. Lokal Ortam: service_account.json Kontrolü
     sa_path = os.path.join(BASE_DIR, "service_account.json")
     if os.path.exists(sa_path):
         creds = Credentials.from_service_account_file(sa_path, scopes=scopes)
         return gspread.authorize(creds)
-    raise FileNotFoundError("Google Service Account kimlik bilgileri bulunamadı.")
+        
+    raise FileNotFoundError("Google kimlik bilgileri ne Streamlit Secrets'ta ne de lokal dosyada bulunamadı.")
 
 def clean_currency(val):
     if pd.isna(val) or val == "": return 0.0

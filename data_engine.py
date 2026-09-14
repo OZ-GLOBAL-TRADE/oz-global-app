@@ -33,7 +33,6 @@ def get_sheets_client():
             creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
             return gspread.authorize(creds)
         except Exception as e:
-            # TOML format hatası varsa sistemi sessizce geçmek yerine hatayı fırlat
             raise ValueError(f"Streamlit Secrets okundu ancak kimlik doğrulanamadı. TOML formatınızı kontrol edin. Hata detayı: {e}")
 
     # 2. Lokal Ortam: service_account.json Kontrolü
@@ -57,30 +56,6 @@ def clean_currency(val):
         if len(parts) > 1 and all(len(p) == 3 for p in parts[1:]): val_str = "".join(parts)
     try: return float(val_str)
     except ValueError: return 0.0
-
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_supplier_pool():
-    client = get_sheets_client()
-    spreadsheet = client.open_by_key(SPREADSHEET_KEY)
-    try:
-        ws = spreadsheet.worksheet("TEDARIKCI_HAVUZU")
-        data = ws.get_all_values()
-        if len(data) > 1:
-            return pd.DataFrame(data[1:], columns=data[0])
-        return pd.DataFrame(columns=["Kategori", "Anahtar Kelime / Ürün", "Tedarikçi Firma", "Ülke / Bölge", "İletişim Kişisi", "E-Posta", "Tahmini Termin / Notlar"])
-    except Exception:
-        return pd.DataFrame(columns=["Kategori", "Anahtar Kelime / Ürün", "Tedarikçi Firma", "Ülke / Bölge", "İletişim Kişisi", "E-Posta", "Tahmini Termin / Notlar"])
-
-def add_supplier_to_sheet(kategori, urunler, firma, ulke, kisi, eposta, notlar):
-    client = get_sheets_client()
-    spreadsheet = client.open_by_key(SPREADSHEET_KEY)
-    try:
-        ws = spreadsheet.worksheet("TEDARIKCI_HAVUZU")
-    except gspread.exceptions.WorksheetNotFound:
-        ws = spreadsheet.add_worksheet(title="TEDARIKCI_HAVUZU", rows=1000, cols=10)
-        ws.append_row(["Kategori", "Anahtar Kelime / Ürün", "Tedarikçi Firma", "Ülke / Bölge", "İletişim Kişisi", "E-Posta", "Tahmini Termin / Notlar"])
-    
-    ws.append_row([kategori, urunler, firma, ulke, kisi, eposta, notlar])
 
 def clean_percent(val):
     if pd.isna(val) or val == "": return 0.0
@@ -110,7 +85,7 @@ def detect_category(product_name: str) -> str:
     elif any(k in p for k in ["kumaş", "tekstil", "iplik", "çadır", "branda", "maske", "eldiven", "giyim"]): return "Tekstil & Medikal"
     elif any(k in p for k in ["gıda", "tarım", "gübre", "ilaç", "tohum", "sprey"]): return "Gıda & Tarım"
     elif any(k in p for k in ["yapı", "inşaat", "seramik", "çimento", "boya", "malzeme", "boru"]): return "Yapı & İnşaat"
-        return "Genel Ticaret / Diğer"
+    return "Genel Ticaret / Diğer"
 
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_pipeline_data():
@@ -221,16 +196,12 @@ def save_cargo_to_sheet(crg_no, req_list, awb_no, carrier, cikis_tarihi, durum, 
     end_col_letter = chr(64 + len(full_row)) 
     exact_range = f"A{target_idx}:{end_col_letter}{target_idx}"
 
-    # 3 KADEMELİ KURŞUN GEÇİRMEZ YAZIM (Fallback Mekanizması)
     try:
-        # 1. Deneme: RAW modda güncel Gspread standart formatı (Tüm kısıtlamaları ezer geçer)
         ws.update(values=[full_row], range_name=exact_range, value_input_option="USER_ENTERED")
     except Exception:
         try:
-            # 2. Deneme: Eski Gspread sürüm uyumluluğu
             ws.update(exact_range, [full_row], value_input_option="USER_ENTERED")
         except Exception:
-            # 3. Deneme (Nükleer Seçenek): APIError verse dahi veriyi hücre bazlı zorla enjekte eder
             for i, val in enumerate(full_row):
                 col_letter = chr(65 + i)
                 ws.update_acell(f"{col_letter}{target_idx}", val)
@@ -266,7 +237,7 @@ def generate_analytical_metrics(df, raw_cargo_rows):
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_supplier_pool():
     client = get_sheets_client()
-    spreadsheet = client.open_by_key("1uNEFwXCZgfjmg6V49cOKGfLiM5h-JhnKu1b0n494ZEg")
+    spreadsheet = client.open_by_key(SPREADSHEET_KEY)
     try:
         ws = spreadsheet.worksheet("TEDARIKCI_HAVUZU")
         data = ws.get_all_values()
@@ -278,10 +249,10 @@ def fetch_supplier_pool():
 
 def add_supplier_to_sheet(kategori, urunler, firma, ulke, kisi, eposta, notlar):
     client = get_sheets_client()
-    spreadsheet = client.open_by_key("1uNEFwXCZgfjmg6V49cOKGfLiM5h-JhnKu1b0n494ZEg")
+    spreadsheet = client.open_by_key(SPREADSHEET_KEY)
     try:
         ws = spreadsheet.worksheet("TEDARIKCI_HAVUZU")
-    except:
+    except Exception:
         ws = spreadsheet.add_worksheet(title="TEDARIKCI_HAVUZU", rows=1000, cols=10)
         ws.append_row(["Kategori", "Anahtar Kelime / Ürün", "Tedarikçi Firma", "Ülke / Bölge", "İletişim Kişisi", "E-Posta", "Tahmini Termin / Notlar"])
     

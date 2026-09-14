@@ -415,15 +415,15 @@ else:
         with col_form:
             st.subheader("➕ Yeni Katalog / Tedarikçi Ekle")
             with st.form("supplier_form", clear_on_submit=True):
-                s_kat = st.selectbox("Kategori:", ["İtki & Güç Sistemleri", "Aviyonik & Elektronik", "Karbon & Kompozit", "CNC & Talaşlı İmalat", "Diğer"])
-                s_urun = st.text_input("Anahtar Kelimeler / Ürünler (Örn: 190cc Boxer, RF Alıcı):")
+                s_kat = st.selectbox("Kategori:", ["Savunma & Havacılık", "Aviyonik & Elektronik", "İtki & Güç Sistemleri", "Makina & Metal Sanayi", "Karbon & Kompozit", "Otomotiv & Araç Parçaları", "Ağır Sanayi & Eğlence", "Tekstil & Medikal", "Gıda & Tarım", "Yapı & İnşaat", "Lojistik & Ambalaj", "Genel Ticaret / Diğer"])
+                s_urun = st.text_input("Anahtar Kelimeler / Ürünler (Örn: 190cc Boxer, Lastik, Dönme Dolap):")
                 s_firma = st.text_input("Tedarikçi Firma Adı:")
-                s_ulke = st.text_input("Ülke / Bölge (Örn: Shenzhen, Pakistan):")
+                s_ulke = st.text_input("Ülke / Bölge (Örn: Shenzhen, Türkiye):")
                 
                 sc1, sc2 = st.columns(2)
-                s_kisi = sc1.text_input("İletişim Kişisi (Örn: Nouman, Frank):")
+                s_kisi = sc1.text_input("İletişim Kişisi:")
                 s_mail = sc2.text_input("E-Posta:")
-                s_not = st.text_area("Termin Süresi & Notlar (Örn: MOQ 100 adet, Karel uyumlu):")
+                s_not = st.text_area("Termin Süresi & Notlar:")
                 
                 if st.form_submit_button("💾 Havuza Kaydet"):
                     add_supplier_to_sheet(s_kat, s_urun, s_firma, s_ulke, s_kisi, s_mail, s_not)
@@ -435,17 +435,55 @@ else:
                 st.dataframe(df_suppliers, use_container_width=True)
         
         with col_ai:
-            st.subheader("🧠 Akıllı REQ Eşleştirme (Jarvis)")
-            st.markdown("Müşteriden gelen talebi buraya yapıştırın. Jarvis, havuzdaki uygun tedarikçileri bulup otomatik teklif isteme (RFQ) maillerini yazsın.")
-            req_input = st.text_area("Talep (REQ) Detayları:", height=150)
+            st.subheader("🧠 Hibrit REQ Eşleştirme & RFQ Oluşturucu")
+            st.markdown("Müşteri talebini girin. Python havuzla eşleştirsin, dilediğiniz tedarikçi için maili butonla üretin.")
+            req_input = st.text_area("Talep (REQ) Detayları (Her satıra bir ürün yazın):", height=120)
             
-            if st.button("⚡ REQ Analizi Yap ve Tedarikçileri Bul", use_container_width=True):
+            if st.button("🔍 Talebi Tedarikçi Havuzu ile Eşleştir", use_container_width=True):
                 if req_input and not df_suppliers.empty:
-                    with st.spinner("Jarvis tedarik ağını tarıyor ve mailleri hazırlıyor..."):
-                        suppliers_json = df_suppliers.to_json(orient="records", force_ascii=False)
-                        match_result = match_req_with_suppliers(req_input, suppliers_json)
-                        st.markdown(match_result)
-                elif df_suppliers.empty:
-                    st.warning("Eşleştirme yapılamadı. Tedarikçi havuzunuz şu an boş.")
+                    # PYTHON DETERMINISTIC MATCHING (AI Yükünden Bağımsız)
+                    req_lines = [line.strip().lower() for line in req_input.split("\n") if line.strip()]
+                    matched_results = []
+                    
+                    for line in req_lines:
+                        found_suppliers = []
+                        for _, sup in df_suppliers.iterrows():
+                            sup_keywords = str(sup.get("Anahtar Kelime / Ürün", "")).lower()
+                            sup_cat = str(sup.get("Kategori", "")).lower()
+                            sup_name = str(sup.get("Tedarikçi Firma", "")).lower()
+                            
+                            # Basit ama etkili anahtar kelime/kategori kesişim kontrolü
+                            if any(kw in line for kw in sup_keywords.split(",")) or any(w in line for w in sup_cat.split()):
+                                found_suppliers.append(sup)
+                        
+                        matched_results.append({"talep": line, "tedarikciler": found_suppliers})
+                    
+                    st.session_state["matched_req_results"] = matched_results
                 else:
-                    st.warning("Lütfen analiz edilecek bir talep girin.")
+                    st.warning("Lütfen talep girin veya tedarikçi havuzunun dolu olduğundan emin olun.")
+
+            # Eşleşme Sonuçlarını ve On-Demand Mail Butonlarını Listele
+            if "matched_req_results" in st.session_state:
+                st.markdown("---")
+                st.subheader("📋 Eşleşen Tedarikçi Matrisi")
+                
+                for item in st.session_state["matched_req_results"]:
+                    with st.container(border=True):
+                        st.markdown(f"**Talep Kalemi:** `{item['talep']}`")
+                        sups = item["tedarikciler"]
+                        if not sups:
+                            st.caption("⚠️ Bu ürün için havuzda doğrudan eşleşen tedarikçi bulunamadı.")
+                        else:
+                            for s in sups:
+                                sup_name = s.get("Tedarikçi Firma")
+                                sup_mail = s.get("E-Posta", "-")
+                                sup_kisi = s.get("İletişim Kişisi", "-")
+                                
+                                sc_col1, sc_col2 = st.columns([3, 1])
+                                sc_col1.markdown(f"• **{sup_name}** | 📧 `{sup_mail}` | 👤 {sup_kisi}")
+                                
+                                btn_key = f"btn_{item['talep']}_{sup_name}".replace(" ", "_")
+                                if sc_col2.button("✉️ Mail Yaz", key=btn_key):
+                                    with st.spinner(f"{sup_name} için RFQ hazırlanıyor..."):
+                                        email_draft = generate_single_rfq_email(sup_name, sup_kisi, item['talep'])
+                                        st.code(email_draft, language="markdown")

@@ -73,25 +73,27 @@ def query_jarvis(user_prompt: str, user_role: str, metrics_summary: dict, raw_df
     except Exception as e:
         return f"⚠️ Jarvis Hatası: {e}"
 
-def match_req_with_suppliers(req_text: str, suppliers_json: str) -> str:
+def intelligent_match_reqs(req_text: str, suppliers_json: str) -> str:
     if not api_key: return "⚠️ Gemini API Anahtarı bulunamadı."
     prompt = f"""
-    Aşağıda müşteriden gelen yeni bir ürün talep listesi (REQ) var:
+    Sen OZ Global Trade dış ticaret ve tedarik zinciri asistanısın. 
+    Aşağıda müşteriden gelen ham talep listesi (ürün kodları, markalar ve teknik özellikler içerir) yer alıyor:
     {req_text}
     
-    Aşağıda ise elimizdeki tedarikçi havuzunun verileri var:
+    Aşağıda ise elimizdeki tedarikçi havuzunun veritabanı JSON formatında var:
     {suppliers_json}
     
-    Görevlerin:
-    1. REQ'deki her bir ürünü, tedarikçi havuzundaki en uygun firmalarla eşleştir.
-    2. Eşleşen firmaların iletişim bilgilerini listele.
-    3. Tedarikçilere gönderilmek üzere tek tek İngilizce, profesyonel RFQ (Teklif İsteği) e-posta taslakları oluştur.
+    Görevin:
+    1. Ham listedeki her bir kalem ürünü analiz et (Marka, model ve ürün türünü anla).
+    2. Tedarikçi havuzundaki firmaların yetkinlikleri ve kategorileriyle akıllı anlamsal (semantic) eşleşme yap.
+    3. Sonucu net, profesyonel bir tablo veya maddeleme şeklinde sun: Hangi ürün için hangi tedarikçi firma uygun, iletişim kişisi ve e-postası nedir belirt.
+    4. Mail taslakları OLUŞTURMA (onları kullanıcı butonla isteyecek). Sadece akıllı eşleştirme matrisini çıkar.
     """
     try:
         model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config=ROBUST_CONFIG)
         return model.generate_content(prompt).text
     except Exception as e:
-        return f"Analiz hatası: {e}"
+        return f"Eşleştirme analizi hatası: {e}"
 
 def generate_single_rfq_email(supplier_name: str, contact_person: str, products_text: str) -> str:
     if not api_key: return "⚠️ Gemini API Anahtarı bulunamadı."

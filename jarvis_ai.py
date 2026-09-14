@@ -64,26 +64,51 @@ def intelligent_match_and_draft_rfqs(req_text: str, suppliers_json: str) -> list
             
         return json.loads(text)
     except Exception:
-        match = re.search(r'\[.*\]', text, re.DOTALL)
-        if match:
-            try:
+        try:
+            match = re.search(r'\[.*\]', text, re.DOTALL)
+            if match:
                 return json.loads(match.group(0))
-            except Exception:
-                return []
+        except Exception:
+            pass
         return []
 
 def generate_executive_briefing(metrics: dict) -> str:
-    if not api_key: return "API anahtarı eksik."
-    prompt = f"Aşağıdaki operasyonel metrikleri özetle ve 3 maddelik yönetim brifingi oluştur: {metrics}"
+    if not api_key: 
+        return "⚠️ Gemini API Anahtarı bulunamadı."
+    prompt = f"""
+    Sen OZ Global Trade tepe yöneticisine brifing veren Jarvis AI'sın.
+    Aşağıdaki konsolide operasyonel ve finansal metrikleri analiz et:
+    {metrics}
+    
+    Yönetici için 3 maddelik, net, aksiyon odaklı ve profesyonel bir günlük icra brifingi hazırla.
+    Varsa geciken kargoları, marjı düşük talepleri ve SLA aşımı olan aşamaları vurgula.
+    """
     try:
         model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config=ROBUST_CONFIG)
         return model.generate_content(prompt).text
     except Exception as e:
-        return f"Brifing hatası: {e}"
+        return f"Brifing üretme hatası: {e}"
 
 def query_jarvis(user_msg: str, user_role: str, metrics: dict, df, company_name: str) -> str:
-    if not api_key: return "API anahtarı eksik."
-    prompt = f"Rol: {user_role}. Şirket: {company_name}. Kullanıcı sorusu: {user_msg}. Veriler: {metrics}"
+    if not api_key: 
+        return "⚠️ Gemini API Anahtarı bulunamadı."
+    
+    context_data = {
+        "sirket": company_name,
+        "kullanici_rolu": user_role,
+        "metrikler": metrics
+    }
+    
+    prompt = f"""
+    Sen OZ Global Trade sisteminin yapay zeka asistanı Jarvis'sin.
+    Kullanıcı Yetkisi/Rolü: {user_role}
+    Şirket: {company_name}
+    Güncel Sistem Verileri: {json.dumps(context_data, ensure_ascii=False)}
+    
+    Kullanıcının Sorusu: "{user_msg}"
+    
+    Kullanıcının rolüne uygun, profesyonel, net ve operasyonel bir yanıt ver.
+    """
     try:
         model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config=ROBUST_CONFIG)
         return model.generate_content(prompt).text

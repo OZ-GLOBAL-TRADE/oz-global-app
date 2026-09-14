@@ -110,7 +110,6 @@ with st.sidebar:
                         st.audio(chat["audio"], format="audio/mp3", autoplay=is_last)
                         
         st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
-        
         user_msg = st.chat_input("Jarvis'e komut ver...", key="sidebar_chat_input")
 
         if user_msg:
@@ -307,11 +306,9 @@ def render_cargo_module():
             if st.form_submit_button("💾 Kaydet ve Bildir"):
                 if crg_code:
                     save_cargo_to_sheet(crg_code, selected_reqs, awb_number, carrier_select, cikis_date.strftime("%d.%m.%Y"), durum_select, pl_url, inv_url, guncel_konum, teslimat_tipi, teslimat_adresi, gcb_no, gumruk_statusu)
-                    
                     from daily_notifier import send_telegram_message
                     msg = f"📦 **GÜMRÜK & KARGO GÜNCELLEMESİ**\n\n📌 **CRG Kodu:** {crg_code}\n📍 **Mevcut Konum:** {guncel_konum}\n✈️ **Lojistik:** {durum_select}\n🏢 **Gümrük Statüsü:** {gumruk_statusu}\n👤 **İşlem Yapan:** {current_user['name']}"
                     send_telegram_message(msg)
-                    
                     st.success("Kaydedildi ve bildirildi!")
                     st.cache_data.clear()
                     st.rerun()
@@ -452,8 +449,14 @@ else:
                 if req_input and not df_suppliers.empty:
                     with st.spinner("Tedarikçiler taranıyor ve Gmail taslakları oluşturuluyor..."):
                         suppliers_json = df_suppliers.to_json(orient="records", force_ascii=False)
-                        match_results = intelligent_match_and_draft_rfqs(req_input, suppliers_json)
-                        st.session_state["rfq_match_list"] = match_results
+                        match_results, err_msg = intelligent_match_and_draft_rfqs(req_input, suppliers_json)
+                        
+                        if err_msg:
+                            st.error(err_msg)
+                        elif not match_results:
+                            st.warning("Bu ürünler için tedarikçi havuzunda doğrudan eşleşen bir firma bulunamadı.")
+                        else:
+                            st.session_state["rfq_match_list"] = match_results
                 elif df_suppliers.empty:
                     st.warning("Tedarikçi havuzunuz şu an boş.")
                 else:
@@ -471,7 +474,7 @@ else:
 
                 for product, sups in grouped.items():
                     with st.container(border=True):
-                        st.markdown(f"#### 🎯 **Talep:** `{product}`")
+                        st.markdown(f"#### 🎯 **Talep Kalemi:** `{product}`")
                         
                         for s in sups:
                             firma = s.get("tedarikci", "-")
@@ -479,10 +482,22 @@ else:
                             kisi = s.get("kisi", "Sales Team")
                             ulke = s.get("ulke", "-")
                             aciklama = s.get("aciklama", "")
-                            subject = s.get("mail_subject", f"RFQ - {product}")
-                            body = s.get("mail_body", "")
 
-                            c_info, c_btn = st.columns([3, 1.3])
+                            # Kurumsal İngilizce RFQ Şablonu (Doğrudan Python tarafında oluşturulur)
+                            subject = f"RFQ - Quotation Request for {product} - OZ Global Trade"
+                            body = (
+                                f"Dear {kisi if kisi else 'Sales Team'},\n\n"
+                                f"We are reaching out from OZ Global Trade regarding the procurement of '{product}'.\n\n"
+                                f"Could you please provide your official quotation including:\n"
+                                f"1. Unit price (EXW / FOB)\n"
+                                f"2. Minimum Order Quantity (MOQ)\n"
+                                f"3. Estimated production / delivery lead time\n\n"
+                                f"We look forward to your prompt response.\n\n"
+                                f"Best regards,\n"
+                                f"OZ Global Trade Team"
+                            )
+
+                            c_info, c_btn = st.columns([3, 1.2])
                             with c_info:
                                 st.markdown(f"**🏢 {firma}** ({ulke}) &nbsp;•&nbsp; 👤 *{kisi}*")
                                 if email:
@@ -492,12 +507,7 @@ else:
                             
                             with c_btn:
                                 if email and "@" in email:
-                                    # Doğrudan Gmail Web Compose URL linki
                                     gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={urllib.parse.quote(email)}&su={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
                                     st.link_button("✉️ Gmail'de Gönder", gmail_url, type="primary", use_container_width=True)
                                 else:
-                                    st.button("❌ E-Posta Eksik", disabled=True, use_container_width=True, key=f"dis_{firma}_{product}")
-
-                            with st.expander(f"📝 {firma} İçin Hazırlanan Mail Taslağını İncele"):
-                                st.markdown(f"**Konu:** `{subject}`")
-                                st.text(body)
+                                    st.button("❌ E-Posta Yok", disabled=True, use_container_width=True, key=f"dis_{firma}_{product}")

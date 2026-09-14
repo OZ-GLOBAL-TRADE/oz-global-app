@@ -100,12 +100,17 @@ def clean_float(val):
 
 def detect_category(product_name: str) -> str:
     p = str(product_name).lower()
-    if any(k in p for k in ["cnc", "govde", "gövde", "titanyum", "aluminyum", "alüminyum", "torna", "freze"]): return "CNC & Talaşlı İmalat"
-    elif any(k in p for k in ["pcb", "elektronik", "aviyonik", "datalink", "modül", "modul", "rf", "alıcı", "verici"]): return "Aviyonik & Elektronik"
-    elif any(k in p for k in ["kompozit", "karbon", "kanat", "fiber", "tüp", "plaka"]): return "Karbon & Kompozit"
-    elif any(k in p for k in ["konnektör", "konnektor", "kablo", "kablaj", "socket", "pin"]): return "Konnektör & Kablaj"
-    elif any(k in p for k in ["motor", "esc", "servomotor", "batarya", "pil", "prop"]): return "İtki & Güç Sistemleri"
-    return "Mekanik / Diğer Tedarik"
+    if any(k in p for k in ["savunma", "havacılık", "uzay", "askeri", "aviation", "aerospace", "defence", "aero", "iha", "siha", "drone"]): return "Savunma & Havacılık"
+    elif any(k in p for k in ["pcb", "elektronik", "aviyonik", "datalink", "modül", "rf", "alıcı", "verici", "yazılım", "otomasyon", "sensör", "kamera", "çip"]): return "Aviyonik & Elektronik"
+    elif any(k in p for k in ["motor", "esc", "servomotor", "batarya", "pil", "prop", "pervane", "güç", "enerji", "battery"]): return "İtki & Güç Sistemleri"
+    elif any(k in p for k in ["cnc", "torna", "freze", "metal", "çelik", "makina", "mekanik", "kalıp", "alüminyum", "titanyum"]): return "Makina & Metal Sanayi"
+    elif any(k in p for k in ["kompozit", "karbon", "kanat", "fiber", "tüp", "plaka", "kevlar", "epoksi"]): return "Karbon & Kompozit"
+    elif any(k in p for k in ["lastik", "jant", "fren", "amortisör", "dingil", "şasi", "far", "silecek", "otomotiv"]): return "Otomotiv & Araç Parçaları"
+    elif any(k in p for k in ["dönme dolap", "ray", "lunapark", "vinç", "redüktör", "dişli", "platform", "konstrüksiyon"]): return "Ağır Sanayi & Eğlence"
+    elif any(k in p for k in ["kumaş", "tekstil", "iplik", "çadır", "branda", "maske", "eldiven", "giyim"]): return "Tekstil & Medikal"
+    elif any(k in p for k in ["gıda", "tarım", "gübre", "ilaç", "tohum", "sprey"]): return "Gıda & Tarım"
+    elif any(k in p for k in ["yapı", "inşaat", "seramik", "çimento", "boya", "malzeme", "boru"]): return "Yapı & İnşaat"
+        return "Genel Ticaret / Diğer"
 
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_pipeline_data():

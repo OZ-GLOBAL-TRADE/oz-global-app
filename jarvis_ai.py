@@ -14,103 +14,70 @@ if api_key:
     genai.configure(api_key=api_key)
 
 MODEL_NAME = "gemini-1.5-flash"
-ROBUST_CONFIG = {
-    "temperature": 0.2,
-    "top_p": 0.95,
-    "top_k": 40,
-    "max_output_tokens": 4096
-}
 
-def intelligent_match_and_draft_rfqs(req_text: str, suppliers_json: str) -> list:
+def intelligent_match_and_draft_rfqs(req_text: str, suppliers_json: str):
     if not api_key:
-        return []
+        return [], "⚠️ Gemini API Anahtarı bulunamadı. Lütfen Secrets veya .env ayarlarınızı kontrol edin."
         
     prompt = f"""
-    Sen OZ Global Trade dış ticaret uzmanısın.
-    Aşağıdaki ürün talep listesini (REQ) analiz et ve tedarikçi havuzundan en uygun firmalarla eşleştir.
-    Her eşleşme için profesyonel İngilizce RFQ e-posta konu ve metnini hazırla.
-    
-    Talep Listesi:
+    Sen OZ Global Trade dış ticaret ve tedarik zinciri asistanısın.
+    Müşteriden gelen talep listesindeki her bir ürünü analiz et ve verilen tedarikçi havuzundan en uygun firmalarla eşleştir.
+
+    TALEP LİSTESİ:
     {req_text}
-    
-    Tedarikçi Havuzu:
+
+    TEDARİKÇİ HAVUZU:
     {suppliers_json}
-    
-    ÇIKTI FORMATI:
-    Kesinlikle karşılama, selamlaşma veya markdown açıklama metni yazma.
-    Sadece ve sadece aşağıdaki şemaya uygun geçerli bir JSON dizisi (Array of Objects) döndür:
+
+    GÖREV:
+    - Listedeki her kalem için en uygun tedarikçileri tespit et.
+    - Sadece aşağıdaki JSON şemasına uygun bir JSON ARRAY (liste) döndür.
     
     [
       {{
-        "talep": "Talep Edilen Ürün/Kalem Adı",
-        "tedarikci": "Eşleşen Tedarikçi Firma Adı",
-        "eposta": "Tedarikçinin e-posta adresi (yoksa '')",
-        "kisi": "İletişim Kişisi (yoksa 'Sales Team')",
-        "ulke": "Ülke / Bölge",
-        "aciklama": "Eşleşme sebebi / Ürün yetkinliği",
-        "mail_subject": "RFQ - Commercial Inquiry for [Ürün Adı] - OZ Global Trade",
-        "mail_body": "Dear [Kişi veya Sales Team],\\n\\nWe are reaching out from OZ Global Trade regarding the procurement of [Ürün Adı].\\nCould you please share your official quotation including unit price, minimum order quantity (MOQ), and estimated delivery lead time?\\n\\nLooking forward to your swift response.\\n\\nBest regards,\\nOZ Global Trade Team"
+        "talep": "Talep edilen ürünün adı/kodu",
+        "tedarikci": "Havuzdaki Tedarikçi Firma Adı",
+        "eposta": "Tedarikçinin e-posta adresi (yoksa boş bırak)",
+        "kisi": "İlgili Kişi Adı (yoksa 'Sales Team')",
+        "ulke": "Ülke veya Şehir",
+        "aciklama": "Neden bu firma seçildi (kısa açıklama)"
       }}
     ]
     """
     try:
-        model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config=ROBUST_CONFIG)
+        model = genai.GenerativeModel(
+            model_name=MODEL_NAME, 
+            generation_config={
+                "temperature": 0.1,
+                "response_mime_type": "application/json"
+            }
+        )
         res = model.generate_content(prompt)
         text = res.text.strip()
-        if "```json" in text:
-            text = text.split("```json")[1].split("```")[0].strip()
-        elif "```" in text:
-            text = text.split("```")[1].split("```")[0].strip()
-            
-        return json.loads(text)
-    except Exception:
-        try:
-            match = re.search(r'\[.*\]', text, re.DOTALL)
-            if match:
-                return json.loads(match.group(0))
-        except Exception:
-            pass
-        return []
+        
+        parsed = json.loads(text)
+        if isinstance(parsed, list):
+            return parsed, ""
+        elif isinstance(parsed, dict) and "matches" in parsed:
+            return parsed["matches"], ""
+        return [], "Yapay zeka eşleşen veri formatını dizi olarak döndüremedi."
+    except Exception as e:
+        return [], f"Eşleştirme API Hatası: {e}"
 
 def generate_executive_briefing(metrics: dict) -> str:
-    if not api_key: 
-        return "⚠️ Gemini API Anahtarı bulunamadı."
-    prompt = f"""
-    Sen OZ Global Trade tepe yöneticisine brifing veren Jarvis AI'sın.
-    Aşağıdaki konsolide operasyonel ve finansal metrikleri analiz et:
-    {metrics}
-    
-    Yönetici için 3 maddelik, net, aksiyon odaklı ve profesyonel bir günlük icra brifingi hazırla.
-    Varsa geciken kargoları, marjı düşük talepleri ve SLA aşımı olan aşamaları vurgula.
-    """
+    if not api_key: return "API anahtarı eksik."
+    prompt = f"Aşağıdaki operasyonel metrikleri özetle ve 3 maddelik yönetim brifingi oluştur: {metrics}"
     try:
-        model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config=ROBUST_CONFIG)
+        model = genai.GenerativeModel(model_name=MODEL_NAME)
         return model.generate_content(prompt).text
     except Exception as e:
-        return f"Brifing üretme hatası: {e}"
+        return f"Brifing hatası: {e}"
 
 def query_jarvis(user_msg: str, user_role: str, metrics: dict, df, company_name: str) -> str:
-    if not api_key: 
-        return "⚠️ Gemini API Anahtarı bulunamadı."
-    
-    context_data = {
-        "sirket": company_name,
-        "kullanici_rolu": user_role,
-        "metrikler": metrics
-    }
-    
-    prompt = f"""
-    Sen OZ Global Trade sisteminin yapay zeka asistanı Jarvis'sin.
-    Kullanıcı Yetkisi/Rolü: {user_role}
-    Şirket: {company_name}
-    Güncel Sistem Verileri: {json.dumps(context_data, ensure_ascii=False)}
-    
-    Kullanıcının Sorusu: "{user_msg}"
-    
-    Kullanıcının rolüne uygun, profesyonel, net ve operasyonel bir yanıt ver.
-    """
+    if not api_key: return "API anahtarı eksik."
+    prompt = f"Rol: {user_role}. Şirket: {company_name}. Kullanıcı sorusu: {user_msg}. Veriler: {metrics}"
     try:
-        model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config=ROBUST_CONFIG)
+        model = genai.GenerativeModel(model_name=MODEL_NAME)
         return model.generate_content(prompt).text
     except Exception as e:
         return f"Jarvis yanıt üretemedi: {e}"

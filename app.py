@@ -5,7 +5,7 @@ import plotly.express as px
 import hashlib
 from datetime import datetime
 from data_engine import fetch_pipeline_data, generate_analytical_metrics, save_cargo_to_sheet, MANAGERS, fetch_supplier_pool, add_supplier_to_sheet
-from jarvis_ai import generate_executive_briefing, query_jarvis, match_req_with_suppliers
+from jarvis_ai import generate_executive_briefing, query_jarvis, intelligent_match_reqs, generate_single_rfq_email
 
 try:
     from voice_engine import generate_jarvis_audio

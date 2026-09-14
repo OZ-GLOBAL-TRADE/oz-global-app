@@ -58,6 +58,30 @@ def clean_currency(val):
     try: return float(val_str)
     except ValueError: return 0.0
 
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_supplier_pool():
+    client = get_sheets_client()
+    spreadsheet = client.open_by_key(SPREADSHEET_KEY)
+    try:
+        ws = spreadsheet.worksheet("TEDARIKCI_HAVUZU")
+        data = ws.get_all_values()
+        if len(data) > 1:
+            return pd.DataFrame(data[1:], columns=data[0])
+        return pd.DataFrame(columns=["Kategori", "Anahtar Kelime / Ürün", "Tedarikçi Firma", "Ülke / Bölge", "İletişim Kişisi", "E-Posta", "Tahmini Termin / Notlar"])
+    except Exception:
+        return pd.DataFrame(columns=["Kategori", "Anahtar Kelime / Ürün", "Tedarikçi Firma", "Ülke / Bölge", "İletişim Kişisi", "E-Posta", "Tahmini Termin / Notlar"])
+
+def add_supplier_to_sheet(kategori, urunler, firma, ulke, kisi, eposta, notlar):
+    client = get_sheets_client()
+    spreadsheet = client.open_by_key(SPREADSHEET_KEY)
+    try:
+        ws = spreadsheet.worksheet("TEDARIKCI_HAVUZU")
+    except gspread.exceptions.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet(title="TEDARIKCI_HAVUZU", rows=1000, cols=10)
+        ws.append_row(["Kategori", "Anahtar Kelime / Ürün", "Tedarikçi Firma", "Ülke / Bölge", "İletişim Kişisi", "E-Posta", "Tahmini Termin / Notlar"])
+    
+    ws.append_row([kategori, urunler, firma, ulke, kisi, eposta, notlar])
+
 def clean_percent(val):
     if pd.isna(val) or val == "": return 0.0
     if isinstance(val, (int, float)): return float(val)

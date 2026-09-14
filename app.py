@@ -416,9 +416,9 @@ else:
             st.subheader("➕ Yeni Katalog / Tedarikçi Ekle")
             with st.form("supplier_form", clear_on_submit=True):
                 s_kat = st.selectbox("Kategori:", ["Savunma & Havacılık", "Aviyonik & Elektronik", "İtki & Güç Sistemleri", "Makina & Metal Sanayi", "Karbon & Kompozit", "Otomotiv & Araç Parçaları", "Ağır Sanayi & Eğlence", "Tekstil & Medikal", "Gıda & Tarım", "Yapı & İnşaat", "Lojistik & Ambalaj", "Genel Ticaret / Diğer"])
-                s_urun = st.text_input("Anahtar Kelimeler / Ürünler (Örn: 190cc Boxer, Lastik, Dönme Dolap):")
+                s_urun = st.text_input("Anahtar Kelimeler / Ürünler (Örn: GEPRC, SIYI, LIDAR, Motor):")
                 s_firma = st.text_input("Tedarikçi Firma Adı:")
-                s_ulke = st.text_input("Ülke / Bölge (Örn: Shenzhen, Türkiye):")
+                s_ulke = st.text_input("Ülke / Bölge:")
                 
                 sc1, sc2 = st.columns(2)
                 s_kisi = sc1.text_input("İletişim Kişisi:")
@@ -435,63 +435,34 @@ else:
                 st.dataframe(df_suppliers, use_container_width=True)
         
         with col_ai:
-            st.subheader("🧠 Hibrit REQ Eşleştirme & RFQ Oluşturucu")
-            st.markdown("Müşteri talebini girin. Python havuzla eşleştirsin, dilediğiniz tedarikçi için maili butonla üretin.")
-            req_input = st.text_area("Talep (REQ) Detayları (Her satıra bir ürün yazın):", height=120)
+            st.subheader("🧠 Akıllı REQ Eşleştirme (Jarvis Semantic)")
+            st.markdown("Müşteriden gelen karmaşık ürün listesini (marka ve model kodlarıyla birlikte) buraya yapıştırın. Jarvis havuzla akıllı eşleştirme yapsın.")
+            req_input = st.text_area("Talep (REQ) Listesi:", height=150, placeholder="Örn:\n2 EFT E410P Only Propellers set\n8 GEPRC GR1404 4500KV Motor\n11 TF02-PRO (LIDAR)")
             
-            if st.button("🔍 Talebi Tedarikçi Havuzu ile Eşleştir", use_container_width=True):
+            if st.button("⚡ Akıllı Eşleştirme Analizi Yap", use_container_width=True):
                 if req_input and not df_suppliers.empty:
-                    req_lines = [line.strip().lower() for line in req_input.split("\n") if line.strip()]
-                    matched_results = []
-                    
-                    for line in req_lines:
-                        found_suppliers = []
-                        line_words = set(line.replace("-", " ").split())
-                        
-                        for _, sup in df_suppliers.iterrows():
-                            sup_keywords = str(sup.get("Anahtar Kelime / Ürün", "")).lower()
-                            sup_cat = str(sup.get("Kategori", "")).lower()
-                            sup_name = str(sup.get("Tedarikçi Firma", "")).lower()
-                            
-                            sup_text = f"{sup_keywords} {sup_cat} {sup_name}"
-                            sup_words = set(sup_text.replace("-", " ").replace(",", " ").split())
-                            
-                            common_words = line_words.intersection(sup_words)
-                            
-                            if common_words or any(w in sup_text for w in line_words if len(w) > 2):
-                                sup_dict = sup.to_dict()
-                                # Aynı firma listede zaten var mı kontrol et
-                                if not any(s.get("Tedarikçi Firma") == sup_dict.get("Tedarikçi Firma") for s in found_suppliers):
-                                    found_suppliers.append(sup_dict)
-                        
-                        matched_results.append({"talep": line, "tedarikciler": found_suppliers})
-                    
-                    st.session_state["matched_req_results"] = matched_results
+                    with st.spinner("Jarvis teknik özellikleri ve markaları analiz ediyor..."):
+                        suppliers_json = df_suppliers.to_json(orient="records", force_ascii=False)
+                        match_result = intelligent_match_reqs(req_input, suppliers_json)
+                        st.session_state["ai_match_result"] = match_result
+                elif df_suppliers.empty:
+                    st.warning("Tedarikçi havuzunuz şu an boş.")
                 else:
-                    st.warning("Lütfen talep girin veya tedarikçi havuzunun dolu olduğundan emin olun.")
+                    st.warning("Lütfen talep listesi girin.")
 
-            # Eşleşme Sonuçlarını ve On-Demand Mail Butonlarını Listele
-            if "matched_req_results" in st.session_state:
+            if "ai_match_result" in st.session_state:
                 st.markdown("---")
-                st.subheader("📋 Eşleşen Tedarikçi Matrisi")
+                st.subheader("🎯 Eşleşme Sonuçları")
+                st.markdown(st.session_state["ai_match_result"])
                 
-                for item in st.session_state["matched_req_results"]:
-                    with st.container(border=True):
-                        st.markdown(f"**Talep Kalemi:** `{item['talep']}`")
-                        sups = item["tedarikciler"]
-                        if not sups:
-                            st.caption("⚠️ Bu ürün için havuzda doğrudan eşleşen tedarikçi bulunamadı.")
-                        else:
-                            for s in sups:
-                                sup_name = s.get("Tedarikçi Firma")
-                                sup_mail = s.get("E-Posta", "-")
-                                sup_kisi = s.get("İletişim Kişisi", "-")
-                                
-                                sc_col1, sc_col2 = st.columns([3, 1])
-                                sc_col1.markdown(f"• **{sup_name}** | 📧 `{sup_mail}` | 👤 {sup_kisi}")
-                                
-                                btn_key = f"btn_{item['talep']}_{sup_name}".replace(" ", "_")
-                                if sc_col2.button("✉️ Mail Yaz", key=btn_key):
-                                    with st.spinner(f"{sup_name} için RFQ hazırlanıyor..."):
-                                        email_draft = generate_single_rfq_email(sup_name, sup_kisi, item['talep'])
-                                        st.code(email_draft, language="markdown")
+                st.markdown("---")
+                st.subheader("✉️ Seçmeli RFQ Mail Üretici")
+                mail_sup = st.selectbox("Mail Yazılacak Tedarikçi Firma:", df_suppliers["Tedarikçi Firma"].tolist() if not df_suppliers.empty else [])
+                mail_item = st.text_input("İlgili Ürün / Kalem Açıklaması:")
+                
+                if st.button("🚀 Bu Firma İçin İngilizce RFQ Taslağı Oluştur"):
+                    if mail_sup and mail_item:
+                        sup_row = df_suppliers[df_suppliers["Tedarikçi Firma"] == mail_sup].iloc[0]
+                        with st.spinner("Mail yazılıyor..."):
+                            draft = generate_single_rfq_email(mail_sup, sup_row.get("İletişim Kişisi", ""), mail_item)
+                            st.code(draft, language="markdown")

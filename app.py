@@ -4,10 +4,8 @@ import pydeck as pdk
 import plotly.express as px
 import hashlib
 from datetime import datetime
-from data_engine import fetch_pipeline_data, generate_analytical_metrics, save_cargo_to_sheet, MANAGERS
-from jarvis_ai import generate_executive_briefing, query_jarvis
-from data_engine import fetch_supplier_pool, add_supplier_to_sheet
-from jarvis_ai import match_req_with_suppliers
+from data_engine import fetch_pipeline_data, generate_analytical_metrics, save_cargo_to_sheet, MANAGERS, fetch_supplier_pool, add_supplier_to_sheet
+from jarvis_ai import generate_executive_briefing, query_jarvis, match_req_with_suppliers
 
 try:
     from voice_engine import generate_jarvis_audio
@@ -358,11 +356,12 @@ def render_cargo_module():
 if current_user["role"] == "CUSTOMS_BROKER":
     render_cargo_module()
 else:
-   tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📊 Konsolide Dashboard", "📈 Tedarik & Kategori Matrisi",
-    "📦 Kargo & Gümrük Masası", "📋 Detaylı REQ Pipeline",
-    "📇 Tedarikçi İstihbarat Ağı"
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📊 Konsolide Dashboard", "📈 Tedarik & Kategori Matrisi",
+        "📦 Kargo & Gümrük Masası", "📋 Detaylı REQ Pipeline",
+        "📇 Tedarikçi İstihbarat Ağı"
     ])
+    
     with tab1:
         c1, c2 = st.columns(2)
         with c1:
@@ -393,6 +392,7 @@ else:
         if "trade_briefing" in st.session_state and st.session_state["trade_briefing"]:
             with st.container(border=True):
                 st.markdown(st.session_state["trade_briefing"])
+                
     with tab2:
         cat_df = pd.DataFrame(metrics.get("kategori_analitigi", []))
         if not cat_df.empty:
@@ -400,51 +400,52 @@ else:
             with g1: st.plotly_chart(px.bar(cat_df, x="Kategori", y="Satis_Tutari", color="Kar_Marji", text_auto="$.2s"), use_container_width=True)
             with g2: st.plotly_chart(px.bar(cat_df, x="Kategori", y="Sure_Cin_Fiyatlama", text_auto=".1f", color="Sure_Cin_Fiyatlama"), use_container_width=True)
             st.dataframe(cat_df, use_container_width=True)
+            
     with tab3:
         render_cargo_module()
+        
     with tab4:
         st.dataframe(display_df, use_container_width=True)
 
-with tab5:
-    df_suppliers = fetch_supplier_pool()
-    
-    col_form, col_ai = st.columns([1, 1.2])
-    
-    with col_form:
-        st.subheader("➕ Yeni Katalog / Tedarikçi Ekle")
-        with st.form("supplier_form", clear_on_submit=True):
-            s_kat = st.selectbox("Kategori:", ["İtki & Güç Sistemleri", "Aviyonik & Elektronik", "Karbon & Kompozit", "CNC & Talaşlı İmalat", "Diğer"])
-            s_urun = st.text_input("Anahtar Kelimeler / Ürünler (Örn: 190cc Boxer, RF Alıcı):")
-            s_firma = st.text_input("Tedarikçi Firma Adı:")
-            s_ulke = st.text_input("Ülke / Bölge (Örn: Shenzhen, Pakistan):")
-            
-            sc1, sc2 = st.columns(2)
-            s_kisi = sc1.text_input("İletişim Kişisi (Örn: Nouman, Frank):")
-            s_mail = sc2.text_input("E-Posta:")
-            s_not = st.text_area("Termin Süresi & Notlar (Örn: MOQ 100 adet, Karel uyumlu):")
-            
-            if st.form_submit_button("💾 Havuza Kaydet"):
-                add_supplier_to_sheet(s_kat, s_urun, s_firma, s_ulke, s_kisi, s_mail, s_not)
-                st.success("Tedarikçi havuza eklendi!")
-                st.cache_data.clear()
-                st.rerun()
-                
-        with st.expander("📂 Mevcut Tedarikçi Havuzu"):
-            st.dataframe(df_suppliers, use_container_width=True)
-
-    with col_ai:
-        st.subheader("🧠 Akıllı REQ Eşleştirme (Jarvis)")
-        st.markdown("Müşteriden gelen talebi buraya yapıştırın. Jarvis, havuzdaki uygun tedarikçileri bulup otomatik teklif isteme (RFQ) maillerini yazsın.")
-        req_input = st.text_area("Talep (REQ) Detayları:", height=150)
+    with tab5:
+        df_suppliers = fetch_supplier_pool()
         
-        if st.button("⚡ REQ Analizi Yap ve Tedarikçileri Bul", use_container_width=True):
-            if req_input and not df_suppliers.empty:
-                with st.spinner("Jarvis tedarik ağını tarıyor ve mailleri hazırlıyor..."):
-                    # DataFrame'i JSON'a çevirerek Jarvis'e gönderiyoruz
-                    suppliers_json = df_suppliers.to_json(orient="records", force_ascii=False)
-                    match_result = match_req_with_suppliers(req_input, suppliers_json)
-                    st.markdown(match_result)
-            elif df_suppliers.empty:
-                st.warning("Eşleştirme yapılamadı. Tedarikçi havuzunuz şu an boş.")
-            else:
-                st.warning("Lütfen analiz edilecek bir talep girin.")
+        col_form, col_ai = st.columns([1, 1.2])
+        
+        with col_form:
+            st.subheader("➕ Yeni Katalog / Tedarikçi Ekle")
+            with st.form("supplier_form", clear_on_submit=True):
+                s_kat = st.selectbox("Kategori:", ["İtki & Güç Sistemleri", "Aviyonik & Elektronik", "Karbon & Kompozit", "CNC & Talaşlı İmalat", "Diğer"])
+                s_urun = st.text_input("Anahtar Kelimeler / Ürünler (Örn: 190cc Boxer, RF Alıcı):")
+                s_firma = st.text_input("Tedarikçi Firma Adı:")
+                s_ulke = st.text_input("Ülke / Bölge (Örn: Shenzhen, Pakistan):")
+                
+                sc1, sc2 = st.columns(2)
+                s_kisi = sc1.text_input("İletişim Kişisi (Örn: Nouman, Frank):")
+                s_mail = sc2.text_input("E-Posta:")
+                s_not = st.text_area("Termin Süresi & Notlar (Örn: MOQ 100 adet, Karel uyumlu):")
+                
+                if st.form_submit_button("💾 Havuza Kaydet"):
+                    add_supplier_to_sheet(s_kat, s_urun, s_firma, s_ulke, s_kisi, s_mail, s_not)
+                    st.success("Tedarikçi havuza eklendi!")
+                    st.cache_data.clear()
+                    st.rerun()
+                    
+            with st.expander("📂 Mevcut Tedarikçi Havuzu"):
+                st.dataframe(df_suppliers, use_container_width=True)
+        
+        with col_ai:
+            st.subheader("🧠 Akıllı REQ Eşleştirme (Jarvis)")
+            st.markdown("Müşteriden gelen talebi buraya yapıştırın. Jarvis, havuzdaki uygun tedarikçileri bulup otomatik teklif isteme (RFQ) maillerini yazsın.")
+            req_input = st.text_area("Talep (REQ) Detayları:", height=150)
+            
+            if st.button("⚡ REQ Analizi Yap ve Tedarikçileri Bul", use_container_width=True):
+                if req_input and not df_suppliers.empty:
+                    with st.spinner("Jarvis tedarik ağını tarıyor ve mailleri hazırlıyor..."):
+                        suppliers_json = df_suppliers.to_json(orient="records", force_ascii=False)
+                        match_result = match_req_with_suppliers(req_input, suppliers_json)
+                        st.markdown(match_result)
+                elif df_suppliers.empty:
+                    st.warning("Eşleştirme yapılamadı. Tedarikçi havuzunuz şu an boş.")
+                else:
+                    st.warning("Lütfen analiz edilecek bir talep girin.")

@@ -6,6 +6,8 @@ import hashlib
 from datetime import datetime
 from data_engine import fetch_pipeline_data, generate_analytical_metrics, save_cargo_to_sheet, MANAGERS
 from jarvis_ai import generate_executive_briefing, query_jarvis
+from data_engine import fetch_supplier_pool, add_supplier_to_sheet
+from jarvis_ai import match_req_with_suppliers
 
 try:
     from voice_engine import generate_jarvis_audio

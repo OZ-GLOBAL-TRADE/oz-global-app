@@ -92,3 +92,24 @@ def match_req_with_suppliers(req_text: str, suppliers_json: str) -> str:
         return model.generate_content(prompt).text
     except Exception as e:
         return f"Analiz hatası: {e}"
+
+def generate_single_rfq_email(supplier_name: str, contact_person: str, products_text: str) -> str:
+    if not api_key: return "⚠️ Gemini API Anahtarı bulunamadı."
+    prompt = f"""
+    Sen OZ Global Trade dış ticaret departmanının AI asistanısın. Aşağıdaki bilgilerle tedarikçiye gönderilmek üzere profesyonel, resmi ve net bir İngilizce RFQ (Request for Quotation) e-posta taslağı yaz.
+    
+    Tedarikçi Firma: {supplier_name}
+    İlgili Kişi: {contact_person if contact_person else 'Sales Team'}
+    Talep Edilen Ürünler/Kategoriler:
+    {products_text}
+    
+    Kurallar:
+    - Konu satırı (Subject) profesyonel olsun.
+    - Termin süresi, MOQ (Minimum sipariş miktarı) ve fiyat teklifi talep et.
+    - Sade ve kurumsal bir İngilizce kullan.
+    """
+    try:
+        model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config=ROBUST_CONFIG)
+        return model.generate_content(prompt).text
+    except Exception as e:
+        return f"Mail oluşturma hatası: {e}"

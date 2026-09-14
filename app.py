@@ -446,24 +446,23 @@ else:
                     
                     for line in req_lines:
                         found_suppliers = []
-                        line_words = set(line.replace("-", " ").split()) # Kelimelere ayır
+                        line_words = set(line.replace("-", " ").split())
                         
                         for _, sup in df_suppliers.iterrows():
                             sup_keywords = str(sup.get("Anahtar Kelime / Ürün", "")).lower()
                             sup_cat = str(sup.get("Kategori", "")).lower()
                             sup_name = str(sup.get("Tedarikçi Firma", "")).lower()
                             
-                            # Tedarikçi anahtar kelimelerini ve kategorisini kelime kümesine dönüştür
                             sup_text = f"{sup_keywords} {sup_cat} {sup_name}"
                             sup_words = set(sup_text.replace("-", " ").replace(",", " ").split())
                             
-                            # Ortak kelime (kesişim) var mı kontrol et (Örn: 'motor', 'karbon', 'gövde', 'datalink')
                             common_words = line_words.intersection(sup_words)
                             
-                            # En az 1 anlamlı kelime örtüşüyorsa veya biri diğerinin içinde geçiyorsa eşleştir
                             if common_words or any(w in sup_text for w in line_words if len(w) > 2):
-                                if sup not in found_suppliers:
-                                    found_suppliers.append(sup)
+                                sup_dict = sup.to_dict()
+                                # Aynı firma listede zaten var mı kontrol et
+                                if not any(s.get("Tedarikçi Firma") == sup_dict.get("Tedarikçi Firma") for s in found_suppliers):
+                                    found_suppliers.append(sup_dict)
                         
                         matched_results.append({"talep": line, "tedarikciler": found_suppliers})
                     

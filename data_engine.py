@@ -262,3 +262,27 @@ def generate_analytical_metrics(df, raw_cargo_rows):
     mgr_group = df.groupby("Yonetici").agg({"REQ_No": "count", "Satis_Tutari": "sum", "Brut_Kar": "sum", "Toplam_Sure": "mean"}).reset_index().to_dict(orient="records")
 
     return {"toplam_req_sayisi": len(df), "toplam_ciro_usd": total_sales, "toplam_maliyet_usd": total_cost, "toplam_brut_kar_usd": total_profit, "konsolide_marj_yuzde": avg_margin * 100, "genel_ort_teklif_suresi": avg_total_time, "asama_ortalamalari": stages, "en_buyuk_darbogaz": bottleneck_stage, "kategori_analitigi": category_summary.to_dict(orient="records"), "aktif_kargolar_crg": cargo_list, "sla_asimlari": sla_breaches, "dusuk_marjli_talepler": low_margin_reqs, "yonetici_ozetleri": mgr_group}
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_supplier_pool():
+    client = get_sheets_client()
+    spreadsheet = client.open_by_key("1uNEFwXCZgfjmg6V49cOKGfLiM5h-JhnKu1b0n494ZEg")
+    try:
+        ws = spreadsheet.worksheet("TEDARIKCI_HAVUZU")
+        data = ws.get_all_values()
+        if len(data) > 1:
+            return pd.DataFrame(data[1:], columns=data[0])
+        return pd.DataFrame(columns=["Kategori", "Anahtar Kelime / Ürün", "Tedarikçi Firma", "Ülke / Bölge", "İletişim Kişisi", "E-Posta", "Tahmini Termin / Notlar"])
+    except Exception:
+        return pd.DataFrame(columns=["Kategori", "Anahtar Kelime / Ürün", "Tedarikçi Firma", "Ülke / Bölge", "İletişim Kişisi", "E-Posta", "Tahmini Termin / Notlar"])
+
+def add_supplier_to_sheet(kategori, urunler, firma, ulke, kisi, eposta, notlar):
+    client = get_sheets_client()
+    spreadsheet = client.open_by_key("1uNEFwXCZgfjmg6V49cOKGfLiM5h-JhnKu1b0n494ZEg")
+    try:
+        ws = spreadsheet.worksheet("TEDARIKCI_HAVUZU")
+    except:
+        ws = spreadsheet.add_worksheet(title="TEDARIKCI_HAVUZU", rows=1000, cols=10)
+        ws.append_row(["Kategori", "Anahtar Kelime / Ürün", "Tedarikçi Firma", "Ülke / Bölge", "İletişim Kişisi", "E-Posta", "Tahmini Termin / Notlar"])
+    
+    ws.append_row([kategori, urunler, firma, ulke, kisi, eposta, notlar])

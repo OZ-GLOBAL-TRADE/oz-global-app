@@ -72,3 +72,23 @@ def query_jarvis(user_prompt: str, user_role: str, metrics_summary: dict, raw_df
         
     except Exception as e:
         return f"⚠️ Jarvis Hatası: {e}"
+
+def match_req_with_suppliers(req_text: str, suppliers_json: str) -> str:
+    if not api_key: return "⚠️ Gemini API Anahtarı bulunamadı."
+    prompt = f"""
+    Aşağıda müşteriden gelen yeni bir ürün talep listesi (REQ) var:
+    {req_text}
+    
+    Aşağıda ise elimizdeki tedarikçi havuzunun verileri var:
+    {suppliers_json}
+    
+    Görevlerin:
+    1. REQ'deki her bir ürünü, tedarikçi havuzundaki en uygun firmalarla eşleştir.
+    2. Eşleşen firmaların iletişim bilgilerini listele.
+    3. Tedarikçilere gönderilmek üzere tek tek İngilizce, profesyonel RFQ (Teklif İsteği) e-posta taslakları oluştur.
+    """
+    try:
+        model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config=ROBUST_CONFIG)
+        return model.generate_content(prompt).text
+    except Exception as e:
+        return f"Analiz hatası: {e}"

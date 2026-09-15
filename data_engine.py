@@ -1,7 +1,9 @@
 import os
+import json
 import gspread
 import pandas as pd
 import streamlit as st
+from datetime import datetime
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 
@@ -176,16 +178,11 @@ def add_supplier_to_sheet(kategori, urunler, firma, ulke, kisi, eposta, notlar):
         ws.append_row(["Kategori", "Anahtar Kelime / Ürün", "Tedarikçi Firma", "Ülke / Bölge", "İletişim Kişisi", "E-Posta", "Tahmini Termin / Notlar"])
     ws.append_row([kategori, urunler, firma, ulke, kisi, eposta, notlar])
 
-# --- ODOO-KILLER (TEKİL PIPELINE) & VERİTABANI FONKSİYONLARI ---
+# --- ODOO-KILLER (TEKİL PIPELINE) FONKSİYONLARI ---
 
 def setup_master_sheets():
     spreadsheet = get_sheets_client().open_by_key(SPREADSHEET_KEY)
     
-    try: spreadsheet.worksheet("URUN_KATALOGU")
-    except:
-        ws = spreadsheet.add_worksheet(title="URUN_KATALOGU", rows=500, cols=5)
-        ws.append_row(["Ürün Kodu/Adı", "Kategori", "Tedarikçi", "Geçmiş Fiyatlar", "Notlar"])
-
     try: spreadsheet.worksheet("MUSTERILER")
     except:
         ws = spreadsheet.add_worksheet(title="MUSTERILER", rows=500, cols=3)
@@ -195,13 +192,13 @@ def setup_master_sheets():
     try: spreadsheet.worksheet("REQ_PIPELINE")
     except:
         ws = spreadsheet.add_worksheet(title="REQ_PIPELINE", rows=1000, cols=10)
-        ws.append_row(["REQ Kodu", "Müşteri", "İçerik / Ürün", "Alış Maliyeti", "Gümrük Lojistik", "Kâr Marjı", "Nihai Teklif", "Statü", "Son Güncelleme"])
+        ws.append_row(["REQ Kodu", "Müşteri", "İçerik / Ürün", "Alış Maliyeti", "Gümrük Lojistik", "Kâr Marjı", "Nihai Teklif", "Statü", "Son Güncelleme", "Ürün Maliyetleri"])
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=5, show_spinner=False)
 def fetch_master_pipeline():
     try:
         data = get_sheets_client().open_by_key(SPREADSHEET_KEY).worksheet("REQ_PIPELINE").get_all_values()
-        return pd.DataFrame(data[1:], columns=data[0]) if len(data) > 1 else pd.DataFrame(columns=["REQ Kodu", "Müşteri", "İçerik / Ürün", "Alış Maliyeti", "Gümrük Lojistik", "Kâr Marjı", "Nihai Teklif", "Statü", "Son Güncelleme"])
+        return pd.DataFrame(data[1:], columns=data[0]) if len(data) > 1 else pd.DataFrame(columns=["REQ Kodu", "Müşteri", "İçerik / Ürün", "Alış Maliyeti", "Gümrük Lojistik", "Kâr Marjı", "Nihai Teklif", "Statü", "Son Güncelleme", "Ürün Maliyetleri"])
     except: return pd.DataFrame()
 
 @st.cache_data(ttl=120, show_spinner=False)
@@ -212,20 +209,20 @@ def fetch_customers_list():
     except: return ["Manuel Giriş"]
 
 def add_master_pipeline_record(req_kodu, musteri, icerik, statu):
-    from datetime import datetime
     get_sheets_client().open_by_key(SPREADSHEET_KEY).worksheet("REQ_PIPELINE").append_row(
-        [req_kodu, musteri, icerik, "0.0", "0.0", "20", "0.0", statu, datetime.today().strftime("%d.%m.%Y")]
+        [req_kodu, musteri, icerik, "0.0", "0.0", "20", "0.0", statu, datetime.today().strftime("%d.%m.%Y"), "{}"]
     )
 
-def update_pipeline_statu(req_kodu, alis, lojistik, marj, teklif, yeni_statu):
-    from datetime import datetime
+def update_pipeline_statu(req_kodu, alis, lojistik, marj, teklif, yeni_statu, urun_maliyetleri_json):
+    """Bulunan REQ satırının tüm maliyet, marj ve JSON değerlerini tek bir API call ile günceller."""
     ws = get_sheets_client().open_by_key(SPREADSHEET_KEY).worksheet("REQ_PIPELINE")
-    cell = ws.find(req_kodu)
-    if cell:
-        r = cell.row
-        ws.update_acell(f"D{r}", alis)
-        ws.update_acell(f"E{r}", lojistik)
-        ws.update_acell(f"F{r}", marj)
-        ws.update_acell(f"G{r}", teklif)
-        ws.update_acell(f"H{r}", yeni_statu)
-        ws.update_acell(f"I{r}", datetime.today().strftime("%d.%m.%Y"))
+    records = ws.get_all_values()
+    
+    for idx, row in enumerate(records):
+        # 0. index 'REQ Kodu' sütununa denk gelir
+        if len(row) > 0 and row[0].strip() == str(req_kodu).strip():
+            row_num = idx + 1
+            # Güncellenecek sütunlar: D(Alış), E(Lojistik), F(Marj), G(Teklif), H(Statü), I(Tarih), J(Ürün JSON)
+            update_data = [[str(alis), str(lojistik), str(marj), str(teklif), str(yeni_statu), datetime.today().strftime("%d.%m.%Y"), str(urun_maliyetleri_json)]]
+            ws.update(range_name=f"D{row_num}:J{row_num}", values=update_data, value_input_option="USER_ENTERED")
+            return

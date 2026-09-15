@@ -150,17 +150,29 @@ def save_cargo_to_sheet(crg_no, req_list, awb_no, carrier, cikis_tarihi, durum, 
         for i, val in enumerate(full_row): ws.update_acell(f"{chr(65 + i)}{target_idx}", val)
 
 def generate_analytical_metrics(df, raw_cargo_rows):
-    if df.empty: return {"toplam_req_sayisi": 0, "toplam_ciro_usd": 0.0, "toplam_maliyet_usd": 0.0, "toplam_brut_kar_usd": 0.0, "konsolide_marj_yuzde": 0.0, "genel_ort_teklif_suresi": 0.0, "asama_ortalamalari": {}, "en_buyuk_darbogaz": "-", "kategori_analitigi": [], "aktif_kargolar_crg": [], "sla_asimlari": [], "dusuk_marjli_talepler": [], "yonetici_ozetleri": []}
+    if df.empty: 
+        return {"toplam_req_sayisi": 0, "toplam_ciro_usd": 0.0, "toplam_maliyet_usd": 0.0, "toplam_brut_kar_usd": 0.0, "konsolide_marj_yuzde": 0.0, "genel_ort_teklif_suresi": 0.0, "asama_ortalamalari": {}, "en_buyuk_darbogaz": "-", "kategori_analitigi": [], "aktif_kargolar_crg": [], "sla_asimlari": [], "dusuk_marjli_talepler": [], "yonetici_ozetleri": []}
+    
     total_sales = df["Satis_Tutari"].sum()
     total_profit = df["Brut_Kar"].sum()
-    stages = {"1. Çin'e İletim": df["Sure_Cin_Iletim"].mean() if not df["Sure_Cin_Iletim"].empty else 0.0, "2. Çin Fiyatlama": df["Sure_Cin_Fiyatlama"].mean() if not df["Sure_Cin_Fiyatlama"].empty else 0.0, "3. Gümrük Fiyatlama": df["Sure_Gumruk_Fiyatlama"].mean() if not df["Sure_Gumruk_Fiyatlama"].empty else 0.0, "4. Marj & Müşteri İletim": df["Sure_Teklif_Iletim"].mean() if not df["Sure_Teklif_Iletim"].empty else 0.0}
+    stages = {
+        "1. Çin'e İletim": df["Sure_Cin_Iletim"].mean() if not df["Sure_Cin_Iletim"].empty else 0.0, 
+        "2. Çin Fiyatlama": df["Sure_Cin_Fiyatlama"].mean() if not df["Sure_Cin_Fiyatlama"].empty else 0.0, 
+        "3. Gümrük Fiyatlama": df["Sure_Gumruk_Fiyatlama"].mean() if not df["Sure_Gumruk_Fiyatlama"].empty else 0.0, 
+        "4. Marj & Müşteri İletim": df["Sure_Teklif_Iletim"].mean() if not df["Sure_Teklif_Iletim"].empty else 0.0
+    }
     
+    # Hatanın düzeltildiği kısım: Kar_Marji ve Sure_Cin_Fiyatlama analitik dataframe'e dahil edildi
+    cat_df = df.groupby("Kategori").agg({"REQ_No": "count", "Satis_Tutari": "sum", "Toplam_Maliyet": "sum", "Brut_Kar": "sum", "Sure_Cin_Fiyatlama": "mean"}).reset_index()
+    cat_df["Kar_Marji"] = (cat_df["Brut_Kar"] / cat_df["Satis_Tutari"]).fillna(0.0)
+
     return {
         "toplam_req_sayisi": len(df), "toplam_ciro_usd": total_sales, "toplam_maliyet_usd": df["Toplam_Maliyet"].sum(), "toplam_brut_kar_usd": total_profit, 
         "konsolide_marj_yuzde": (total_profit / total_sales * 100) if total_sales > 0 else 0.0, "genel_ort_teklif_suresi": df["Toplam_Sure"].mean() if not df["Toplam_Sure"].empty else 0.0,
         "asama_ortalamalari": stages, "en_buyuk_darbogaz": max(stages, key=stages.get) if stages else "-", 
-        "kategori_analitigi": df.groupby("Kategori").agg({"REQ_No": "count", "Satis_Tutari": "sum", "Toplam_Maliyet": "sum", "Brut_Kar": "sum"}).reset_index().to_dict(orient="records"), 
-        "aktif_kargolar_crg": enrich_cargo_data(raw_cargo_rows, df.to_dict(orient="records")), "sla_asimlari": [], "dusuk_marjli_talepler": [], "yonetici_ozetleri": []
+        "kategori_analitigi": cat_df.to_dict(orient="records"), 
+        "aktif_kargolar_crg": enrich_cargo_data(raw_cargo_rows, df.to_dict(orient="records")), "sla_asimlari": [], "dusuk_marjli_talepler": [], 
+        "yonetici_ozetleri": df.groupby("Yonetici").agg({"REQ_No": "count", "Satis_Tutari": "sum", "Brut_Kar": "sum"}).reset_index().to_dict(orient="records")
     }
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -214,15 +226,13 @@ def add_master_pipeline_record(req_kodu, musteri, icerik, statu):
     )
 
 def update_pipeline_statu(req_kodu, alis, lojistik, marj, teklif, yeni_statu, urun_maliyetleri_json):
-    """Bulunan REQ satırının tüm maliyet, marj ve JSON değerlerini tek bir API call ile günceller."""
+    """Bulunan REQ satırının tüm maliyet, marj ve JSON değerlerini tek seferde günceller."""
     ws = get_sheets_client().open_by_key(SPREADSHEET_KEY).worksheet("REQ_PIPELINE")
     records = ws.get_all_values()
     
     for idx, row in enumerate(records):
-        # 0. index 'REQ Kodu' sütununa denk gelir
         if len(row) > 0 and row[0].strip() == str(req_kodu).strip():
             row_num = idx + 1
-            # Güncellenecek sütunlar: D(Alış), E(Lojistik), F(Marj), G(Teklif), H(Statü), I(Tarih), J(Ürün JSON)
             update_data = [[str(alis), str(lojistik), str(marj), str(teklif), str(yeni_statu), datetime.today().strftime("%d.%m.%Y"), str(urun_maliyetleri_json)]]
             ws.update(range_name=f"D{row_num}:J{row_num}", values=update_data, value_input_option="USER_ENTERED")
             return

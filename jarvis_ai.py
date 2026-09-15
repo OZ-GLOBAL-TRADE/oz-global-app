@@ -13,7 +13,6 @@ api_key = get_gemini_api_key()
 if api_key:
     genai.configure(api_key=api_key)
 
-# API'nin yönlendirdiği güncel modeli doğrudan tanımlıyoruz
 MODEL_NAME = "gemini-3.6-flash"
 
 def intelligent_match_and_draft_rfqs(req_text: str, suppliers_json: str):
@@ -22,7 +21,7 @@ def intelligent_match_and_draft_rfqs(req_text: str, suppliers_json: str):
         
     prompt = f"""
     Sen OZ Global Trade dış ticaret ve tedarik zinciri asistanısın.
-    Müşteriden gelen talep listesindeki her bir ürünü analiz et ve verilen tedarikçi havuzundan en uygun firmalarla eşleştir.
+    Müşteriden gelen talep listesindeki her bir ürünü analiz et ve verilen tedarikçi havuzundan uygun firmalarla eşleştir.
 
     TALEP LİSTESİ:
     {req_text}
@@ -30,10 +29,11 @@ def intelligent_match_and_draft_rfqs(req_text: str, suppliers_json: str):
     TEDARİKÇİ HAVUZU:
     {suppliers_json}
 
-    GÖREV:
-    - Listedeki her kalem için en uygun tedarikçileri tespit et.
-    - Sadece aşağıdaki JSON şemasına uygun bir JSON ARRAY (liste) döndür.
-    - Markdown başlığı, selamlama veya açıklama yazma.
+    GÖREV VE KURALLAR:
+    1. Listedeki HER BİR kalem için, havuzdan o ürünü sağlayabilecek TÜM tedarikçileri bul. 
+    2. Alternatif fiyat teklifleri alabilmemiz için bir ürüne uyan birden fazla firma varsa, her biri için ayrı bir JSON nesnesi oluştur (Kesinlikle tek tedarikçiyle sınırlama).
+    3. Sadece aşağıdaki JSON şemasına uygun bir JSON ARRAY (liste) döndür.
+    4. Markdown başlığı, selamlama veya açıklama yazma.
     
     JSON ŞEMASI:
     [
@@ -51,7 +51,7 @@ def intelligent_match_and_draft_rfqs(req_text: str, suppliers_json: str):
         model = genai.GenerativeModel(
             model_name=MODEL_NAME,
             generation_config={
-                "temperature": 0.1,
+                "temperature": 0.2, # Birden fazla alternatif bulması için yaratıcılığı hafif artırdık
                 "response_mime_type": "application/json"
             }
         )

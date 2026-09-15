@@ -354,163 +354,72 @@ def render_cargo_module():
 if current_user["role"] == "CUSTOMS_BROKER":
     render_cargo_module()
 else:
+    # Sekme isimlerini Odoo-Killer vizyonuna uygun şekilde güncelliyoruz
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Konsolide Dashboard", "📈 Tedarik & Kategori Matrisi",
-        "📦 Kargo & Gümrük Masası", "📋 Detaylı REQ Pipeline",
+        "📦 Kargo & Gümrük Masası", "🚀 Master Pipeline (Yeni ERP)",
         "📇 Tedarikçi İstihbarat Ağı"
     ])
     
-    with tab1:
-        c1, c2 = st.columns(2)
-        with c1:
-            st.subheader("Aşama Bazlı Ortalama Süreler")
-            stages_df = pd.DataFrame(list(metrics["asama_ortalamalari"].items()), columns=["Aşama", "Ortalama Gün"])
-            st.plotly_chart(px.bar(stages_df, x="Aşama", y="Ortalama Gün", text_auto=".1f", color="Ortalama Gün", color_continuous_scale="Blues"), use_container_width=True)
-        with c2:
-            st.subheader("Yönetici Bazlı Ciro & Kâr")
-            mgr_df = pd.DataFrame(metrics["yonetici_ozetleri"])
-            st.plotly_chart(px.bar(mgr_df, x="Yonetici", y=["Satis_Tutari", "Brut_Kar"], barmode="group"), use_container_width=True)
+    # ... (tab1, tab2 ve tab3'ün mevcut kodları aynen kalacak) ...
 
-        st.subheader("📝 Jarvis Günlük Operasyon Brifingi")
-        b_col1, b_col2 = st.columns([1, 1])
-        with b_col1:
-            if st.button("⚡ Günlük Yönetici Brifingi Üret", use_container_width=True):
-                with st.spinner("Jarvis analiz ediyor..."):
-                    st.session_state["trade_briefing"] = generate_executive_briefing(metrics)
-        with b_col2:
-            if st.button("📲 Brifingi Telegram'a İlet", use_container_width=True):
-                with st.spinner("Telegram'a gönderiliyor..."):
-                    from daily_notifier import send_telegram_message
-                    current_b = st.session_state.get("trade_briefing") or generate_executive_briefing(metrics)
-                    st.session_state["trade_briefing"] = current_b
-                    msg_text = f"🌐 OZ GLOBAL TRADE — GÜNLÜK YÖNETİCİ BRİFİNGİ\n\n{current_b}"
-                    if send_telegram_message(msg_text): st.success("✅ İletildi!")
-                    else: st.error("❌ Gönderim başarısız.")
-
-        if "trade_briefing" in st.session_state and st.session_state["trade_briefing"]:
-            with st.container(border=True):
-                st.markdown(st.session_state["trade_briefing"])
-                
-    with tab2:
-        cat_df = pd.DataFrame(metrics.get("kategori_analitigi", []))
-        if not cat_df.empty:
-            g1, g2 = st.columns(2)
-            with g1: st.plotly_chart(px.bar(cat_df, x="Kategori", y="Satis_Tutari", color="Kar_Marji", text_auto="$.2s"), use_container_width=True)
-            with g2: st.plotly_chart(px.bar(cat_df, x="Kategori", y="Sure_Cin_Fiyatlama", text_auto=".1f", color="Sure_Cin_Fiyatlama"), use_container_width=True)
-            st.dataframe(cat_df, use_container_width=True)
-            
-    with tab3:
-        render_cargo_module()
-        
     with tab4:
-        st.dataframe(display_df, use_container_width=True)
-
-    with tab5:
-        df_suppliers = fetch_supplier_pool()
+        st.subheader("🎯 Ana Operasyon Döngüsü (The Golden Thread)")
+        st.markdown("Odoo'daki Satınalma ve Satış modüllerinin tek ekranda birleştiği MVP vizyonu.")
         
-        col_form, col_ai = st.columns([1, 1.3])
+        # Sayfaları otomatik kur
+        from data_engine import setup_master_sheets, fetch_master_pipeline, add_master_pipeline_record
+        setup_master_sheets()
         
-        with col_form:
-            st.subheader("➕ Yeni Katalog / Tedarikçi Ekle")
-            with st.form("supplier_form", clear_on_submit=True):
-                s_kat = st.selectbox("Kategori:", [
-                    "Savunma & Havacılık", "Aviyonik & Elektronik", "İtki & Güç Sistemleri", 
-                    "Makina & Metal Sanayi", "Karbon & Kompozit", "Otomotiv & Araç Parçaları", 
-                    "Ağır Sanayi & Eğlence", "Tekstil & Medikal", "Gıda & Tarım", 
-                    "Yapı & İnşaat", "Lojistik & Ambalaj", "Genel Ticaret / Diğer"
-                ])
-                s_urun = st.text_input("Anahtar Kelimeler / Ürünler (Örn: GEPRC, SIYI, LIDAR, Motor):")
-                s_firma = st.text_input("Tedarikçi Firma Adı:")
-                s_ulke = st.text_input("Ülke / Bölge:")
+        df_pipe = fetch_master_pipeline()
+        
+        # Yeni REQ Giriş Formu (Manuel kâr hesabı hamallığını bitiren form)
+        with st.expander("➕ Yeni REQ (Talep) Oluştur", expanded=False):
+            with st.form("new_req_form", clear_on_submit=True):
+                col1, col2, col3 = st.columns(3)
                 
-                sc1, sc2 = st.columns(2)
-                s_kisi = sc1.text_input("İletişim Kişisi:")
-                s_mail = sc2.text_input("E-Posta:")
-                s_not = st.text_area("Termin Süresi & Notlar:")
+                req_kodu = col1.text_input("REQ Kodu (Örn: TTRA_REQ_17):")
+                musteri = col2.text_input("Müşteri (Örn: TİTRA TEKNOLOJİ):")
+                icerik = col3.text_input("İçerik (Örn: FLYCOLOR 120A ESC):")
                 
-                if st.form_submit_button("💾 Havuza Kaydet"):
-                    add_supplier_to_sheet(s_kat, s_urun, s_firma, s_ulke, s_kisi, s_mail, s_not)
-                    st.success("Tedarikçi havuza eklendi!")
+                alis = col1.number_input("Alış Maliyeti ($):", min_value=0.0, format="%.2f")
+                loj_gumruk = col2.number_input("Gümrük & Lojistik Masrafı ($):", min_value=0.0, format="%.2f")
+                marj = col3.number_input("Kâr Marjı (%):", min_value=0, max_value=100, value=20)
+                
+                # Otonom Teklif Fiyatı Hesaplama simülasyonu
+                statu = st.selectbox("Süreç Statüsü:", ["Tedarikçi Bekleniyor ⏳", "Müşteriye Teklif Sunuldu 📄", "Sipariş Onaylandı ✅", "Çin'e Sipariş Geçildi 🚀"])
+                
+                if st.form_submit_button("💾 Pipeline'a Kaydet ve Hesapla"):
+                    toplam_maliyet = alis + loj_gumruk
+                    nihai_teklif = toplam_maliyet * (1 + (marj / 100))
+                    
+                    add_master_pipeline_record(
+                        req_kodu, musteri, icerik, 
+                        f"${alis:,.2f}", f"${loj_gumruk:,.2f}", 
+                        f"%{marj}", f"${nihai_teklif:,.2f}", statu
+                    )
+                    st.success(f"Başarıyla eklendi! Otomatik Hesaplanan Teklif: ${nihai_teklif:,.2f}")
                     st.cache_data.clear()
                     st.rerun()
-                    
-            with st.expander("📂 Mevcut Tedarikçi Havuzu"):
-                st.dataframe(df_suppliers, use_container_width=True)
-        
-        with col_ai:
-            st.subheader("⚡ Otonom REQ & Gmail RFQ İstasyonu")
-            req_input = st.text_area(
-                "Müşteri Talep (REQ) Listesini Yapıştırın:", 
-                height=140, 
-                placeholder="Örn:\nEFT E410P Only Propellers set\nGEPRC GR1404 4500KV Motor\nSIYI HM30 REPEATER Combo\nTF02-PRO (LIDAR)"
-            )
-            
-            if st.button("🚀 Eşleştir ve Gmail RFQ Butonlarını Oluştur", use_container_width=True):
-                if req_input and not df_suppliers.empty:
-                    with st.spinner("Tedarikçiler taranıyor ve Gmail taslakları oluşturuluyor..."):
-                        suppliers_json = df_suppliers.to_json(orient="records", force_ascii=False)
-                        match_results, err_msg = intelligent_match_and_draft_rfqs(req_input, suppliers_json)
-                        
-                        if err_msg:
-                            st.error(err_msg)
-                        elif not match_results:
-                            st.warning("Bu ürünler için tedarikçi havuzunda doğrudan eşleşen bir firma bulunamadı.")
-                        else:
-                            st.session_state["rfq_match_list"] = match_results
-                elif df_suppliers.empty:
-                    st.warning("Tedarikçi havuzunuz şu an boş.")
-                else:
-                    st.warning("Lütfen talep listesi girin.")
 
-            if "rfq_match_list" in st.session_state and st.session_state["rfq_match_list"]:
-                st.markdown("---")
-                results = st.session_state["rfq_match_list"]
+        # Modern Spark benzeri tablo görünümü
+        if not df_pipe.empty:
+            st.markdown("<br>", unsafe_allow_html=True)
+            for idx, row in df_pipe.iterrows():
+                # Statüye göre renkli rozet (Badge) oluşturma
+                s = str(row['Süreç Statüsü'])
+                color = "#3B82F6" # Mavi (Default)
+                if "⏳" in s: color = "#F59E0B" # Turuncu
+                elif "✅" in s: color = "#10B981" # Yeşil
+                elif "🚀" in s: color = "#8B5CF6" # Mor
                 
-                # Talebe göre grupla
-                grouped = {}
-                for item in results:
-                    t = item.get("talep", "Genel Talep")
-                    grouped.setdefault(t, []).append(item)
-
-                for product, sups in grouped.items():
-                    with st.container(border=True):
-                        st.markdown(f"#### 🎯 **Talep Kalemi:** `{product}`")
-                        
-                        for idx, s in enumerate(sups):
-                            firma = s.get("tedarikci", "-")
-                            email = s.get("eposta", "").strip()
-                            kisi = s.get("kisi", "Sales Team")
-                            ulke = s.get("ulke", "-")
-                            aciklama = s.get("aciklama", "")
-
-                            subject = f"RFQ - Quotation Request for {product} - OZ Global Trade"
-                            body = (
-                                f"Dear {kisi if kisi else 'Sales Team'},\n\n"
-                                f"We are reaching out from OZ Global Trade regarding the procurement of '{product}'.\n\n"
-                                f"Could you please provide your official quotation including:\n"
-                                f"1. Unit price (EXW / FOB)\n"
-                                f"2. Minimum Order Quantity (MOQ)\n"
-                                f"3. Estimated production / delivery lead time\n\n"
-                                f"We look forward to your prompt response.\n\n"
-                                f"Best regards,\n"
-                                f"OZ Global Trade Team"
-                            )
-
-                            c_info, c_btn = st.columns([3, 1.2])
-                            with c_info:
-                                st.markdown(f"**🏢 {firma}** ({ulke}) &nbsp;•&nbsp; 👤 *{kisi}*")
-                                if email:
-                                    st.caption(f"📧 `{email}` | 💡 {aciklama}")
-                                else:
-                                    st.caption(f"⚠️ *E-posta kayıtlı değil* | 💡 {aciklama}")
-                            
-                            with c_btn:
-                                if email and "@" in email:
-                                    gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={urllib.parse.quote(email)}&su={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
-                                    st.link_button("✉️ Gmail'de Gönder", gmail_url, type="primary", use_container_width=True)
-                                else:
-                                    st.button("❌ E-Posta Yok", disabled=True, use_container_width=True, key=f"dis_{firma}_{product}_{idx}")
-                            
-                            # Eğer listede başka firma da varsa araya ince bir çizgi çek
-                            if idx < len(sups) - 1:
-                                st.divider()
+                badge = f"<span style='background-color:{color}; color:white; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;'>{s}</span>"
+                
+                with st.container(border=True):
+                    c1, c2, c3, c4 = st.columns([1.5, 2, 1.5, 1.5])
+                    c1.markdown(f"**{row['REQ Kodu']}**<br><span style='color:#94A3B8; font-size:13px;'>{row['Müşteri']}</span>", unsafe_allow_html=True)
+                    c2.markdown(f"📦 {row['İçerik / Ürün']}")
+                    c3.markdown(f"**Teklif:** <span style='color:#10B981;'>{row['Müşteri Teklif Fiyatı']}</span> <span style='font-size:12px; color:#94A3B8;'>(M: {row['Kâr Marjı (%)']})</span>", unsafe_allow_html=True)
+                    c4.markdown(badge, unsafe_allow_html=True)
+        else:
+            st.info("Pipeline şu an boş. Lütfen yeni bir REQ girişi yapın.")

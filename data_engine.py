@@ -257,3 +257,51 @@ def add_supplier_to_sheet(kategori, urunler, firma, ulke, kisi, eposta, notlar):
         ws.append_row(["Kategori", "Anahtar Kelime / Ürün", "Tedarikçi Firma", "Ülke / Bölge", "İletişim Kişisi", "E-Posta", "Tahmini Termin / Notlar"])
     
     ws.append_row([kategori, urunler, firma, ulke, kisi, eposta, notlar])
+
+# --- YENİ ODOO-KILLER (TEKİL PIPELINE) FONKSİYONLARI ---
+
+def setup_master_sheets():
+    """Yusuf Bey'e sunulacak yeni SQL simülasyon sayfalarını Google Sheets'te oluşturur."""
+    client = get_sheets_client()
+    spreadsheet = client.open_by_key(SPREADSHEET_KEY)
+    
+    # URUN_KATALOGU Sayfası
+    try:
+        ws_cat = spreadsheet.worksheet("URUN_KATALOGU")
+    except gspread.exceptions.WorksheetNotFound:
+        ws_cat = spreadsheet.add_worksheet(title="URUN_KATALOGU", rows=500, cols=10)
+        ws_cat.append_row(["Ürün Kodu/Adı", "Kategori", "Tedarikçi", "Son Alış Fiyatı (USD)", "Tarih", "Notlar"])
+
+    # REQ_PIPELINE Sayfası (The Golden Thread)
+    try:
+        ws_pipe = spreadsheet.worksheet("REQ_PIPELINE")
+    except gspread.exceptions.WorksheetNotFound:
+        ws_pipe = spreadsheet.add_worksheet(title="REQ_PIPELINE", rows=1000, cols=10)
+        ws_pipe.append_row([
+            "REQ Kodu", "Müşteri", "İçerik / Ürün", "Tedarikçi & Alış Maliyeti", 
+            "Gümrük & Lojistik", "Kâr Marjı (%)", "Müşteri Teklif Fiyatı", "Süreç Statüsü"
+        ])
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_master_pipeline():
+    """REQ_PIPELINE sayfasındaki verileri çeker."""
+    client = get_sheets_client()
+    spreadsheet = client.open_by_key(SPREADSHEET_KEY)
+    try:
+        ws = spreadsheet.worksheet("REQ_PIPELINE")
+        data = ws.get_all_values()
+        if len(data) > 1:
+            return pd.DataFrame(data[1:], columns=data[0])
+        else:
+            return pd.DataFrame(columns=data[0]) if data else pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+def add_master_pipeline_record(req_kodu, musteri, icerik, alis_maliyeti, lojistik, marj, teklif_fiyati, statu):
+    client = get_sheets_client()
+    spreadsheet = client.open_by_key(SPREADSHEET_KEY)
+    try:
+        ws = spreadsheet.worksheet("REQ_PIPELINE")
+        ws.append_row([req_kodu, musteri, icerik, alis_maliyeti, lojistik, marj, teklif_fiyati, statu])
+    except Exception as e:
+        st.error(f"Kayıt eklenirken hata oluştu: {e}")

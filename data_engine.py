@@ -190,13 +190,15 @@ def add_supplier_to_sheet(kategori, urunler, firma, ulke, kisi, eposta, notlar):
 
 # --- ODOO-KILLER (TEKİL PIPELINE) & VERİTABANI YÖNETİMİ FONKSİYONLARI ---
 
+# DİKKAT: Hatanın çözüldüğü nokta burasıdır. (cache_resource eklendi)
+@st.cache_resource(show_spinner=False)
 def setup_master_sheets():
     spreadsheet = get_sheets_client().open_by_key(SPREADSHEET_KEY)
     
     try: spreadsheet.worksheet("URUN_KATALOGU")
     except:
         ws = spreadsheet.add_worksheet(title="URUN_KATALOGU", rows=500, cols=5)
-        ws.append_row(["Ürün Adı/Kodu", "Kategori", "Varsayılan Tedarikçi", "Geçmiş Fiyat ($)", "Notlar"])
+        ws.append_row(["Ürün Kodu/Adı", "Kategori", "Varsayılan Tedarikçi", "Geçmiş Fiyat ($)", "Notlar"])
 
     try: spreadsheet.worksheet("MUSTERILER")
     except:
@@ -237,7 +239,6 @@ def add_product_db(ad, kategori, tedarikci, fiyat, notlar):
     get_sheets_client().open_by_key(SPREADSHEET_KEY).worksheet("URUN_KATALOGU").append_row([ad, kategori, tedarikci, str(fiyat), notlar])
 
 def add_master_pipeline_record(req_kodu, musteri, urun_adetleri_dict, statu):
-    # Ürünleri adetleriyle birlikte gösteren metin ve JSON oluşturma
     icerik_str = ", ".join([f"{urun} ({adet} Adet)" for urun, adet in urun_adetleri_dict.items()])
     urunler_json = json.dumps({urun: {"adet": adet, "fiyat": 0.0} for urun, adet in urun_adetleri_dict.items()}, ensure_ascii=False)
     
@@ -246,14 +247,12 @@ def add_master_pipeline_record(req_kodu, musteri, urun_adetleri_dict, statu):
     )
 
 def update_pipeline_statu(req_kodu, alis, lojistik, marj, teklif, yeni_statu, urun_maliyetleri_json, guncel_icerik_str):
-    """Bulunan REQ satırının içerik, maliyet, marj ve JSON değerlerini günceller."""
     ws = get_sheets_client().open_by_key(SPREADSHEET_KEY).worksheet("REQ_PIPELINE")
     records = ws.get_all_values()
     
     for idx, row in enumerate(records):
         if len(row) > 0 and row[0].strip() == str(req_kodu).strip():
             row_num = idx + 1
-            # C sütunundan J sütununa kadar (İçerik, Alış, Lojistik, Marj, Teklif, Statü, Tarih, JSON)
             update_data = [[str(guncel_icerik_str), str(alis), str(lojistik), str(marj), str(teklif), str(yeni_statu), datetime.today().strftime("%d.%m.%Y"), str(urun_maliyetleri_json)]]
             ws.update(range_name=f"C{row_num}:J{row_num}", values=update_data, value_input_option="USER_ENTERED")
             return

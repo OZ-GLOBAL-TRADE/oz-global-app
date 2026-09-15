@@ -71,9 +71,10 @@ if not st.session_state["authenticated"]:
 
 current_user = st.session_state["user_info"]
 
-# --- SIDEBAR & JARVIS SOHBETİ ---
 st.sidebar.image("https://img.icons8.com/fluency/96/artificial-intelligence.png", width=50)
 st.sidebar.markdown(f"### 👤 {current_user['name']}")
+st.sidebar.caption(f"Yetki: **{current_user['role']}**")
+
 if st.sidebar.button("🚪 Çıkış Yap"):
     st.session_state["authenticated"] = False
     st.rerun()
@@ -115,11 +116,104 @@ with st.sidebar:
 st.title("🌐 OZ GLOBAL TRADE — Tedarik Komuta Merkezi")
 df, metrics = get_cached_trade_data()
 
+display_df = df if current_user["role"] == "ADMIN" else df[df["Yonetici"] == current_user["assigned_manager"]]
+cargos = metrics.get("aktif_kargolar_crg", [])
+
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Konsolide Dashboard", "📈 Analitik",
     "📦 Kargo & Gümrük", "🚀 Master Pipeline (ERP)",
     "📇 Tedarikçi İstihbaratı"
 ])
+
+def render_cargo_module():
+    st.subheader("📦 Aktif Sevkiyat Radarı & Gümrük Masası")
+    city_coords = {"ISTANBUL": (28.8146, 41.2753), "ANKARA": (32.8597, 39.9334), "TRANSIT": (70.0, 35.0), "SHENZHEN": (114.0579, 22.5431)}
+    location_groups = {}
+    
+    for c in cargos:
+        durum, konum = c.get("Guncel_Durum", ""), c.get("Lojistik_Notu", "").upper()
+        key, color, elevation = "SHENZHEN", [245, 158, 11, 255], 120000
+        if "İSTANBUL" in konum or "İGA" in durum.upper() or "ISTANBUL" in konum: key, color, elevation = "ISTANBUL", [239, 68, 68, 255], 220000
+        elif "ANKARA" in konum or "TESLİM" in durum.upper(): key, color, elevation = "ANKARA", [16, 185, 129, 255], 250000
+        elif "UÇUŞTA" in durum.upper(): key, color, elevation = "TRANSIT", [56, 189, 248, 255], 170000
+
+        if key not in location_groups: location_groups[key] = {"lon": city_coords[key][0], "lat": city_coords[key][1], "color": color, "elevation": elevation, "cargos": []}
+        location_groups[key]["cargos"].append(f"• {c['CRG_No']} (AWB: {c['AWB_No']})")
+
+    map_data = []
+    for idx, (k, data) in enumerate(location_groups.items()):
+        map_data.append({"Sehir": k, "lon": data["lon"] + (idx * 0.4), "lat": data["lat"] + (idx * 0.2), "color": data["color"], "elevation": data["elevation"], "TooltipHTML": f"<b>Lokasyon: {k}</b><br>{'<br>'.join(data['cargos'])}"})
+
+    df_map = pd.DataFrame(map_data)
+    if not df_map.empty:
+        col_layer = pdk.Layer("ColumnLayer", data=df_map, get_position=["lon", "lat"], get_elevation="elevation", elevation_scale=300, radius=45000, get_fill_color="color", pickable=True, auto_highlight=True)
+        txt_layer = pdk.Layer("TextLayer", data=df_map, get_position=["lon", "lat"], get_text="Sehir", get_size=15, get_color=[255, 255, 255, 255], get_alignment_baseline="'bottom'")
+        st.pydeck_chart(pdk.Deck(layers=[col_layer, txt_layer], initial_view_state=pdk.ViewState(latitude=35.0, longitude=60.0, zoom=2.3, pitch=40), tooltip={"html": "{TooltipHTML}"}))
+    st.markdown("---")
+
+    with st.expander("➕ / 🔄 Kargo & Gümrük Girişi", expanded=False):
+        all_available_reqs = sorted(display_df["REQ_No"].unique().tolist()) if not display_df.empty else []
+        action_type = st.radio("İşlem Tipi:", ["Yeni Kargo Ekle", "Mevcut Kargoyu Güncelle"], horizontal=True)
+        
+        crg_data = {}
+        if action_type == "Mevcut Kargoyu Güncelle":
+            if not cargos: st.warning("Güncellenecek aktif kargo bulunmuyor.")
+            else:
+                existing_crgs = [c["CRG_No"] for c in cargos]
+                selected_crg = st.selectbox("Güncellenecek CRG Kodunu Seçin:", existing_crgs)
+                crg_data = next((c for c in cargos if c["CRG_No"] == selected_crg), {})
+        else: selected_crg = f"CRG_{len(cargos)+1:02d}"
+
+        with st.form("cargo_form", clear_on_submit=False):
+            fc1, fc2, fc3 = st.columns(3)
+            with fc1:
+                crg_code = st.text_input("CRG Kodu:", value=selected_crg)
+                default_reqs = [r for r in crg_data.get("Ilgili_REQler", []) if r in all_available_reqs]
+                selected_reqs = st.multiselect("İçerdiği REQ Kodları:", options=all_available_reqs, default=default_reqs)
+                awb_number = st.text_input("AWB Numarası:", value=crg_data.get("AWB_No", ""))
+                carrier_opts = ["Otomatik Algıla", "Turkish Cargo", "DHL Express", "FedEx", "UPS", "Özel Hat"]
+                def_c = crg_data.get("Tasiyici", "Otomatik Algıla")
+                if def_c not in carrier_opts: carrier_opts.append(def_c)
+                carrier_select = st.selectbox("Taşıyıcı:", carrier_opts, index=carrier_opts.index(def_c))
+            with fc2:
+                try: c_date = datetime.strptime(crg_data.get("Cikis_Tarihi", ""), "%d.%m.%Y").date()
+                except: c_date = datetime.today().date()
+                cikis_date = st.date_input("Çıkış Tarihi:", value=c_date)
+                durum_opts = ["Çıkış Hazırlığında", "🛫 Uçuşta / Yolda", "🛬 İGA Terminali - İndi", "📦 Gümrük Muayene", "✅ Teslim Edildi"]
+                def_d = crg_data.get("Guncel_Durum", "Çıkış Hazırlığında")
+                if def_d not in durum_opts: durum_opts.append(def_d)
+                durum_select = st.selectbox("Lojistik Durumu:", durum_opts, index=durum_opts.index(def_d))
+                tes_opts = ["Belirtilmedi", "Kapı Teslim", "Gümrük Teslim"]
+                def_t = crg_data.get("Teslimat_Tipi", "Belirtilmedi")
+                if def_t not in tes_opts: tes_opts.append(def_t)
+                teslimat_tipi = st.selectbox("Teslimat Tipi:", tes_opts, index=tes_opts.index(def_t))
+                teslimat_adresi = st.text_input("Teslimat Adresi:", value=crg_data.get("Teslimat_Adresi", "OZ Global Trade Merkez Ofis"))
+            with fc3:
+                gcb_no = st.text_input("Gümrük Beyanname (GÇB) No:", value=crg_data.get("GCB_No", "-"))
+                g_opts = ["Bekliyor", "Evrak Kontrolde", "Muayenede", "Vergi Onay Bekliyor", "Gümrükten Çekildi / Yola Çıktı"]
+                def_g = crg_data.get("Gumruk_Statusu", "Bekliyor")
+                if def_g not in g_opts: g_opts.append(def_g)
+                gumruk_statusu = st.selectbox("Gümrük Statüsü:", g_opts, index=g_opts.index(def_g))
+                guncel_konum = st.text_input("Mevcut Konum (Örn: ISTANBUL - TURKEY):", value=crg_data.get("Lojistik_Notu", ""))
+                pl_url = st.text_input("Packing List Linki:", value=crg_data.get("Packing_List_URL", ""))
+                inv_url = st.text_input("Fatura Linki:", value=crg_data.get("Fatura_URL", ""))
+            
+            if st.form_submit_button("💾 Kaydet ve Bildir"):
+                if crg_code:
+                    save_cargo_to_sheet(crg_code, selected_reqs, awb_number, carrier_select, cikis_date.strftime("%d.%m.%Y"), durum_select, pl_url, inv_url, guncel_konum, teslimat_tipi, teslimat_adresi, gcb_no, gumruk_statusu)
+                    st.success("Kaydedildi ve bildirildi!")
+                    st.cache_data.clear()
+                    st.rerun()
+
+    for crg in cargos:
+        with st.container(border=True):
+            konum_str = crg.get('Lojistik_Notu', '')
+            location_badge = f"<span class='neon-location'>📍 Mevcut Konum: {konum_str}</span>" if konum_str and konum_str != "-" else "<span class='neon-location' style='background:#1F2937; color:#9CA3AF!important; border-color:#4B5563;'>📍 Mevcut Konum: Bekleniyor</span>"
+            st.markdown(f"### 📦 **{crg['CRG_No']}** — AWB: `{crg['AWB_No']}` ({crg['Tasiyici']}) &nbsp;&nbsp; {location_badge}", unsafe_allow_html=True)
+            st.markdown(f"**Tarih:** {crg['Cikis_Tarihi']} | **Lojistik:** `{crg['Guncel_Durum']}`")
+            st.markdown(f"**Gümrük Statüsü:** `{crg.get('Gumruk_Statusu', 'Bekliyor')}` | **GÇB No:** {crg.get('GCB_No', '-')} | **Teslimat:** {crg.get('Teslimat_Tipi', '-')} ({crg.get('Teslimat_Adresi', '-')})")
+            for req in crg.get("REQ_Detaylari", []):
+                st.markdown(f"<div class='req-item'><b>{req.get('req_no')}</b> — {req.get('musteri')} | Maliyet: <b>${req.get('maliyet'):,.2f}</b></div>", unsafe_allow_html=True)
 
 # TAB 1: KONSOLİDE DASHBOARD
 with tab1:
@@ -134,7 +228,7 @@ with tab1:
         if not mgr_df.empty:
             st.plotly_chart(px.bar(mgr_df, x="Yonetici", y=["Satis_Tutari", "Brut_Kar"], barmode="group"), use_container_width=True)
 
-# TAB 2: ANALİTİK
+# TAB 2: ANALİTİK (Hatanın düzeldiği yer)
 with tab2:
     cat_df = pd.DataFrame(metrics.get("kategori_analitigi", []))
     if not cat_df.empty:
@@ -143,10 +237,9 @@ with tab2:
         with g2: st.plotly_chart(px.bar(cat_df, x="Kategori", y="Sure_Cin_Fiyatlama", text_auto=".1f", color="Sure_Cin_Fiyatlama"), use_container_width=True)
         st.dataframe(cat_df, use_container_width=True)
 
-# TAB 3: KARGO & GÜMRÜK
+# TAB 3: KARGO
 with tab3:
-    st.info("Kargo ve Gümrük haritası aktif.")
-    # Kargo içeriği çok uzun olduğu için MVP'de yer kaplamaması adına daraltıldı, isterseniz kargo radarını buraya tekrar dahil edebiliriz.
+    render_cargo_module()
 
 # TAB 4: YENİ MASTER PIPELINE (ODOO-KILLER)
 with tab4:
@@ -166,7 +259,6 @@ with tab4:
             with st.form("new_req_form", clear_on_submit=True):
                 req_kodu = st.text_input("REQ Kodu (Örn: TTRA_REQ_17):")
                 musteri = st.selectbox("Müşteri Seçin:", customer_list)
-                # DİKKAT: Ürünlerin alt alta girildiği çoklu giriş alanı
                 icerik = st.text_area("İçerik (Her satıra BİR ürün yazın):", placeholder="Örn:\nFLYCOLOR 120A ESC\n208cc Boxer Motor")
                 
                 if st.form_submit_button("🔥 Talebi Pipeline'a At"):
@@ -198,7 +290,6 @@ with tab4:
             st.markdown(f"### ⚙️ Yönetim Paneli: `{req_kodu}`")
             st.caption(f"🏢 **Müşteri:** {req.get('Müşteri')} | 🗓️ **Son Güncelleme:** {req.get('Son Güncelleme')}")
             
-            # --- GÖRSEL AŞAMA (STEPPER) ÇUBUĞU ---
             stages = ["1. Fiyat Araştırması", "2. Fiyatlama & Marj", "3. Müşteri Onayı", "4. Sipariş & Lojistik", "5. Tamamlandı"]
             step_cols = st.columns(len(stages))
             current_idx = stages.index(mevcut_statu) if mevcut_statu in stages else 0
@@ -214,13 +305,10 @@ with tab4:
             
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # --- ÜRÜN BAZLI FİYATLANDIRMA FORMU ---
             with st.form(f"update_form_{req_kodu}"):
-                # İçeriği satır satır ayırarak ürün listesi oluştur (Boş satırları at)
                 raw_icerik = req.get('İçerik / Ürün', '')
                 items = [x.strip() for x in str(raw_icerik).split('\n') if x.strip()]
                 
-                # Kayıtlı fiyatları JSON'dan çek
                 try: saved_costs = json.loads(req.get('Ürün Maliyetleri', '{}'))
                 except: saved_costs = {}
 
@@ -247,25 +335,17 @@ with tab4:
                 next_stage = st.selectbox("Süreci Nereye Taşıyacaksınız?", stages, index=current_idx)
                 
                 if st.form_submit_button("🚀 Kaydet ve Durumu Güncelle", use_container_width=True):
-                    # Toplam alış maliyetini sistem tüm ürünleri toplayarak otomatik hesaplar
                     toplam_alis = sum(item_costs.values())
                     toplam_maliyet = toplam_alis + lojistik
                     nihai_teklif = toplam_maliyet * (1 + (marj / 100))
                     
-                    # Güncellenen verileri veritabanına gönder
                     urunler_json_str = json.dumps(item_costs, ensure_ascii=False)
                     update_pipeline_statu(
-                        req_kodu, 
-                        f"{toplam_alis:.2f}", 
-                        f"{lojistik:.2f}", 
-                        f"{marj}", 
-                        f"{nihai_teklif:.2f}", 
-                        next_stage, 
-                        urunler_json_str
+                        req_kodu, f"{toplam_alis:.2f}", f"{lojistik:.2f}", f"{marj}", f"{nihai_teklif:.2f}", next_stage, urunler_json_str
                     )
                     
                     st.success(f"Başarılı! Toplam Alış: ${toplam_alis:,.2f} | Yeni Teklif: ${nihai_teklif:,.2f}")
-                    st.session_state["selected_req"] = None # Paneli temizle
+                    st.session_state["selected_req"] = None
                     st.cache_data.clear()
                     st.rerun()
                     

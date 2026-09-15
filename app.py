@@ -476,14 +476,13 @@ else:
                     with st.container(border=True):
                         st.markdown(f"#### 🎯 **Talep Kalemi:** `{product}`")
                         
-                        for s in sups:
+                        for idx, s in enumerate(sups):
                             firma = s.get("tedarikci", "-")
                             email = s.get("eposta", "").strip()
                             kisi = s.get("kisi", "Sales Team")
                             ulke = s.get("ulke", "-")
                             aciklama = s.get("aciklama", "")
 
-                            # Kurumsal İngilizce RFQ Şablonu (Doğrudan Python tarafında oluşturulur)
                             subject = f"RFQ - Quotation Request for {product} - OZ Global Trade"
                             body = (
                                 f"Dear {kisi if kisi else 'Sales Team'},\n\n"
@@ -510,4 +509,8 @@ else:
                                     gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={urllib.parse.quote(email)}&su={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
                                     st.link_button("✉️ Gmail'de Gönder", gmail_url, type="primary", use_container_width=True)
                                 else:
-                                    st.button("❌ E-Posta Yok", disabled=True, use_container_width=True, key=f"dis_{firma}_{product}")
+                                    st.button("❌ E-Posta Yok", disabled=True, use_container_width=True, key=f"dis_{firma}_{product}_{idx}")
+                            
+                            # Eğer listede başka firma da varsa araya ince bir çizgi çek
+                            if idx < len(sups) - 1:
+                                st.divider()

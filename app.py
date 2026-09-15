@@ -9,7 +9,8 @@ from datetime import datetime
 
 from data_engine import (
     fetch_pipeline_data, generate_analytical_metrics, save_cargo_to_sheet, MANAGERS, fetch_supplier_pool, add_supplier_to_sheet,
-    setup_master_sheets, fetch_master_pipeline, fetch_customers_list, add_master_pipeline_record, update_pipeline_statu
+    setup_master_sheets, fetch_master_pipeline, fetch_customers_list, fetch_products_list, add_customer_db, add_product_db,
+    add_master_pipeline_record, update_pipeline_statu
 )
 from jarvis_ai import generate_executive_briefing, query_jarvis, intelligent_match_and_draft_rfqs
 
@@ -228,7 +229,7 @@ with tab1:
         if not mgr_df.empty:
             st.plotly_chart(px.bar(mgr_df, x="Yonetici", y=["Satis_Tutari", "Brut_Kar"], barmode="group"), use_container_width=True)
 
-# TAB 2: ANALİTİK (Hatanın düzeldiği yer)
+# TAB 2: ANALİTİK
 with tab2:
     cat_df = pd.DataFrame(metrics.get("kategori_analitigi", []))
     if not cat_df.empty:
@@ -248,27 +249,61 @@ with tab4:
     setup_master_sheets()
     df_pipe = fetch_master_pipeline()
     customer_list = fetch_customers_list()
+    product_list = fetch_products_list()
     
     if "selected_req" not in st.session_state:
         st.session_state["selected_req"] = None
 
-    col_list, col_detail = st.columns([1, 2.2])
+    col_list, col_detail = st.columns([1.2, 2])
     
     with col_list:
+        # VERİTABANI YÖNETİMİ
+        with st.expander("⚙️ Veritabanı Yönetimi (Müşteri & Ürün Ekle)", expanded=False):
+            t_cust, t_prod = st.tabs(["Müşteri Ekle", "Ürün (Katalog) Ekle"])
+            with t_cust:
+                with st.form("add_cust_form", clear_on_submit=True):
+                    n_ad = st.text_input("Müşteri Adı:")
+                    n_tip = st.selectbox("Sektör / Tip:", ["Savunma", "Sivil", "Ticari", "Kurumsal"])
+                    if st.form_submit_button("Müşteriyi Kaydet"):
+                        add_customer_db(n_ad, "-", n_tip)
+                        st.success("Müşteri eklendi!")
+                        st.cache_data.clear()
+                        st.rerun()
+            with t_prod:
+                with st.form("add_prod_form", clear_on_submit=True):
+                    p_ad = st.text_input("Ürün Kodu veya Adı:")
+                    p_kat = st.selectbox("Kategori:", ["Savunma", "Elektronik", "İtki", "Mekanik", "Diğer"])
+                    p_fiyat = st.number_input("Tahmini Geçmiş Alış Fiyatı ($):", value=0.0)
+                    if st.form_submit_button("Ürünü Kataloğa Ekle"):
+                        add_product_db(p_ad, p_kat, "-", p_fiyat, "-")
+                        st.success("Ürün eklendi!")
+                        st.cache_data.clear()
+                        st.rerun()
+
+        # YENİ REQ AÇMA FORMU (DB BAĞLANTILI)
         with st.expander("➕ Yeni Talep (REQ) Aç", expanded=False):
+            st.markdown("Veritabanına kayıtlı Müşteri ve Ürünleri seçiniz.")
             with st.form("new_req_form", clear_on_submit=True):
                 req_kodu = st.text_input("REQ Kodu (Örn: TTRA_REQ_17):")
                 musteri = st.selectbox("Müşteri Seçin:", customer_list)
-                icerik = st.text_area("İçerik (Her satıra BİR ürün yazın):", placeholder="Örn:\nFLYCOLOR 120A ESC\n208cc Boxer Motor")
+                
+                secilen_urunler = st.multiselect("Talep Edilen Ürünleri Seçin:", product_list)
+                
+                # Seçilen her ürün için adet kutusu
+                urun_adetleri = {}
+                if secilen_urunler:
+                    st.markdown("📍 **Seçilen Ürünlerin Adetleri:**")
+                    for urun in secilen_urunler:
+                        urun_adetleri[urun] = st.number_input(f"{urun} (Adet):", min_value=1, value=1, key=f"req_yeni_{urun}")
                 
                 if st.form_submit_button("🔥 Talebi Pipeline'a At"):
-                    if req_kodu and icerik:
-                        add_master_pipeline_record(req_kodu, musteri, icerik, "1. Fiyat Araştırması")
+                    if req_kodu and urun_adetleri:
+                        add_master_pipeline_record(req_kodu, musteri, urun_adetleri, "1. Fiyat Araştırması")
                         st.success("Talep başarıyla açıldı!")
                         st.cache_data.clear()
                         st.rerun()
                     else:
-                        st.error("Lütfen REQ Kodu ve İçerik giriniz.")
+                        st.error("Lütfen REQ Kodu giriniz ve en az bir ürün seçiniz.")
 
         st.markdown("### 📋 Aktif Süreçler")
         if not df_pipe.empty:
@@ -290,6 +325,7 @@ with tab4:
             st.markdown(f"### ⚙️ Yönetim Paneli: `{req_kodu}`")
             st.caption(f"🏢 **Müşteri:** {req.get('Müşteri')} | 🗓️ **Son Güncelleme:** {req.get('Son Güncelleme')}")
             
+            # --- GÖRSEL AŞAMA (STEPPER) ÇUBUĞU ---
             stages = ["1. Fiyat Araştırması", "2. Fiyatlama & Marj", "3. Müşteri Onayı", "4. Sipariş & Lojistik", "5. Tamamlandı"]
             step_cols = st.columns(len(stages))
             current_idx = stages.index(mevcut_statu) if mevcut_statu in stages else 0
@@ -305,26 +341,42 @@ with tab4:
             
             st.markdown("<br>", unsafe_allow_html=True)
             
+            # --- REQ İÇERİĞİ VE BİRİM FİYAT DÜZENLEME FORMU ---
             with st.form(f"update_form_{req_kodu}"):
-                raw_icerik = req.get('İçerik / Ürün', '')
-                items = [x.strip() for x in str(raw_icerik).split('\n') if x.strip()]
                 
                 try: saved_costs = json.loads(req.get('Ürün Maliyetleri', '{}'))
                 except: saved_costs = {}
 
-                st.markdown("#### 📦 Ürün Bazlı Maliyetler (Alış Fiyatları)")
-                item_costs = {}
+                current_items = list(saved_data.keys()) if 'saved_data' in locals() else list(saved_costs.keys())
+                valid_defaults = [x for x in current_items if x in product_list]
                 
-                if items:
-                    for item in items:
-                        default_val = float(saved_costs.get(item, 0.0))
-                        item_costs[item] = st.number_input(f"Ürün: {item} ($):", value=default_val, format="%.2f", min_value=0.0)
+                st.markdown("#### 📦 REQ İçeriğini (Ürünleri) Düzenle")
+                # İsteğe bağlı olarak mevcut REQ içindeki ürünleri anında değiştirin
+                active_products = st.multiselect("Talep Edilen Ürünleri Ekle / Çıkar:", product_list, default=valid_defaults)
+                
+                st.markdown("#### 💵 Ürün Adetleri ve Birim Maliyetleri")
+                new_saved_data = {}
+                toplam_alis = 0.0
+                
+                if active_products:
+                    for item in active_products:
+                        old_info = saved_costs.get(item, {"adet": 1, "fiyat": 0.0})
+                        if not isinstance(old_info, dict): 
+                            old_info = {"adet": 1, "fiyat": float(old_info)} # Eski veri uyumluluğu
+                            
+                        c_q, c_p = st.columns([1, 1])
+                        n_qty = c_q.number_input(f"{item} - Adet:", value=int(old_info["adet"]), min_value=1, key=f"q_{item}")
+                        n_prc = c_p.number_input(f"{item} - Birim Alış ($):", value=float(old_info["fiyat"]), format="%.2f", min_value=0.0, key=f"p_{item}")
+                        
+                        new_saved_data[item] = {"adet": n_qty, "fiyat": n_prc}
+                        toplam_alis += (n_qty * n_prc)
                 else:
-                    st.info("Bu talepte listelenmiş ürün bulunmuyor.")
+                    st.warning("Bu talebe atanmış ürün yok.")
 
+                st.markdown(f"**Toplam Ürün Maliyeti:** <span style='color:#10B981;'>${toplam_alis:,.2f}</span>", unsafe_allow_html=True)
                 st.markdown("---")
-                c1, c2 = st.columns(2)
                 
+                c1, c2 = st.columns(2)
                 def_loj = float(str(req.get("Gümrük Lojistik", "0")).replace("$", "").replace(",", ""))
                 def_marj = float(str(req.get("Kâr Marjı", "20")).replace("%", ""))
                 
@@ -335,22 +387,23 @@ with tab4:
                 next_stage = st.selectbox("Süreci Nereye Taşıyacaksınız?", stages, index=current_idx)
                 
                 if st.form_submit_button("🚀 Kaydet ve Durumu Güncelle", use_container_width=True):
-                    toplam_alis = sum(item_costs.values())
                     toplam_maliyet = toplam_alis + lojistik
                     nihai_teklif = toplam_maliyet * (1 + (marj / 100))
                     
-                    urunler_json_str = json.dumps(item_costs, ensure_ascii=False)
+                    urunler_json_str = json.dumps(new_saved_data, ensure_ascii=False)
+                    guncel_icerik_str = ", ".join([f"{k} ({v['adet']} Adet)" for k, v in new_saved_data.items()])
+                    
                     update_pipeline_statu(
-                        req_kodu, f"{toplam_alis:.2f}", f"{lojistik:.2f}", f"{marj}", f"{nihai_teklif:.2f}", next_stage, urunler_json_str
+                        req_kodu, f"{toplam_alis:.2f}", f"{lojistik:.2f}", f"{marj}", f"{nihai_teklif:.2f}", next_stage, urunler_json_str, guncel_icerik_str
                     )
                     
-                    st.success(f"Başarılı! Toplam Alış: ${toplam_alis:,.2f} | Yeni Teklif: ${nihai_teklif:,.2f}")
+                    st.success(f"Başarılı! Yeni Teklif Müşteriye Sunulmaya Hazır: ${nihai_teklif:,.2f}")
                     st.session_state["selected_req"] = None
                     st.cache_data.clear()
                     st.rerun()
                     
         else:
-            st.info("👈 Yönetmek veya aşamasını değiştirmek istediğiniz REQ'e sol listeden tıklayın.")
+            st.info("👈 Yönetmek veya içeriğini değiştirmek istediğiniz REQ'e sol listeden tıklayın.")
 
 # TAB 5: TEDARİKÇİ İSTİHBARATI
 with tab5:

@@ -4,7 +4,13 @@ import pandas as pd
 import streamlit as st
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
-from logistics_tracker import enrich_cargo_data, detect_carrier
+
+# Eğer logistics_tracker dosyanız yoksa hata vermemesi için try-except bloğuna alıyoruz
+try:
+    from logistics_tracker import enrich_cargo_data, detect_carrier
+except ImportError:
+    def enrich_cargo_data(raw, records): return []
+    def detect_carrier(awb): return "Otomatik Algıla"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -25,23 +31,20 @@ SPREADSHEET_KEY = get_config_val("SPREADSHEET_KEY", "1uNEFwXCZgfjmg6V49cOKGfLiM5
 @st.cache_resource(show_spinner=False)
 def get_sheets_client():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    
-    # 1. Bulut Ortamı: Streamlit Secrets Kontrolü
     if hasattr(st, "secrets") and "gcp_service_account" in st.secrets:
         try:
             creds_dict = dict(st.secrets["gcp_service_account"])
             creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
             return gspread.authorize(creds)
         except Exception as e:
-            raise ValueError(f"Streamlit Secrets okundu ancak kimlik doğrulanamadı. TOML formatınızı kontrol edin. Hata detayı: {e}")
+            raise ValueError(f"Streamlit Secrets okundu ancak kimlik doğrulanamadı: {e}")
 
-    # 2. Lokal Ortam: service_account.json Kontrolü
     sa_path = os.path.join(BASE_DIR, "service_account.json")
     if os.path.exists(sa_path):
         creds = Credentials.from_service_account_file(sa_path, scopes=scopes)
         return gspread.authorize(creds)
         
-    raise FileNotFoundError("Google kimlik bilgileri ne Streamlit Secrets'ta ne de lokal dosyada bulunamadı.")
+    raise FileNotFoundError("Google kimlik bilgileri bulunamadı.")
 
 def clean_currency(val):
     if pd.isna(val) or val == "": return 0.0
@@ -175,23 +178,12 @@ def save_cargo_to_sheet(crg_no, req_list, awb_no, carrier, cikis_tarihi, durum, 
 
     full_row = [
         str(target_idx - 1) if not existing_row_idx else str(existing_row_idx - 1),
-        str(crg_no).strip(),
-        req_str,
-        str(awb_no).strip(),
-        str(carrier).strip(),
-        str(cikis_tarihi).strip(),
-        str(durum).strip(),
-        str(packing_url).strip(),
-        str(fatura_url).strip(),
-        str(notlar).strip(),
-        str(teslimat_tipi).strip(),
-        str(teslimat_adresi).strip(),
-        str(gcb_no).strip(),
-        str(gumruk_statusu).strip()
+        str(crg_no).strip(), req_str, str(awb_no).strip(), str(carrier).strip(), str(cikis_tarihi).strip(),
+        str(durum).strip(), str(packing_url).strip(), str(fatura_url).strip(), str(notlar).strip(),
+        str(teslimat_tipi).strip(), str(teslimat_adresi).strip(), str(gcb_no).strip(), str(gumruk_statusu).strip()
     ]
 
-    if not has_no_col:
-        full_row = full_row[1:]
+    if not has_no_col: full_row = full_row[1:]
 
     end_col_letter = chr(64 + len(full_row)) 
     exact_range = f"A{target_idx}:{end_col_letter}{target_idx}"
@@ -203,8 +195,7 @@ def save_cargo_to_sheet(crg_no, req_list, awb_no, carrier, cikis_tarihi, durum, 
             ws.update(exact_range, [full_row], value_input_option="USER_ENTERED")
         except Exception:
             for i, val in enumerate(full_row):
-                col_letter = chr(65 + i)
-                ws.update_acell(f"{col_letter}{target_idx}", val)
+                ws.update_acell(f"{chr(65 + i)}{target_idx}", val)
 
 def generate_analytical_metrics(df, raw_cargo_rows):
     if df.empty:
@@ -255,7 +246,6 @@ def add_supplier_to_sheet(kategori, urunler, firma, ulke, kisi, eposta, notlar):
     except Exception:
         ws = spreadsheet.add_worksheet(title="TEDARIKCI_HAVUZU", rows=1000, cols=10)
         ws.append_row(["Kategori", "Anahtar Kelime / Ürün", "Tedarikçi Firma", "Ülke / Bölge", "İletişim Kişisi", "E-Posta", "Tahmini Termin / Notlar"])
-    
     ws.append_row([kategori, urunler, firma, ulke, kisi, eposta, notlar])
 
 # --- YENİ ODOO-KILLER (TEKİL PIPELINE) FONKSİYONLARI ---
@@ -265,14 +255,12 @@ def setup_master_sheets():
     client = get_sheets_client()
     spreadsheet = client.open_by_key(SPREADSHEET_KEY)
     
-    # URUN_KATALOGU Sayfası
     try:
         ws_cat = spreadsheet.worksheet("URUN_KATALOGU")
     except gspread.exceptions.WorksheetNotFound:
         ws_cat = spreadsheet.add_worksheet(title="URUN_KATALOGU", rows=500, cols=10)
         ws_cat.append_row(["Ürün Kodu/Adı", "Kategori", "Tedarikçi", "Son Alış Fiyatı (USD)", "Tarih", "Notlar"])
 
-    # REQ_PIPELINE Sayfası (The Golden Thread)
     try:
         ws_pipe = spreadsheet.worksheet("REQ_PIPELINE")
     except gspread.exceptions.WorksheetNotFound:

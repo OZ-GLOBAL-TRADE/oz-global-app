@@ -280,30 +280,28 @@ with tab4:
                         st.cache_data.clear()
                         st.rerun()
 
-        # YENİ REQ AÇMA FORMU (DB BAĞLANTILI)
+        # YENİ REQ AÇMA FORMU (Form yapısı kaldırıldı, anında güncelleniyor!)
         with st.expander("➕ Yeni Talep (REQ) Aç", expanded=False):
             st.markdown("Veritabanına kayıtlı Müşteri ve Ürünleri seçiniz.")
-            with st.form("new_req_form", clear_on_submit=True):
-                req_kodu = st.text_input("REQ Kodu (Örn: TTRA_REQ_17):")
-                musteri = st.selectbox("Müşteri Seçin:", customer_list)
-                
-                secilen_urunler = st.multiselect("Talep Edilen Ürünleri Seçin:", product_list)
-                
-                # Seçilen her ürün için adet kutusu
-                urun_adetleri = {}
-                if secilen_urunler:
-                    st.markdown("📍 **Seçilen Ürünlerin Adetleri:**")
-                    for urun in secilen_urunler:
-                        urun_adetleri[urun] = st.number_input(f"{urun} (Adet):", min_value=1, value=1, key=f"req_yeni_{urun}")
-                
-                if st.form_submit_button("🔥 Talebi Pipeline'a At"):
-                    if req_kodu and urun_adetleri:
-                        add_master_pipeline_record(req_kodu, musteri, urun_adetleri, "1. Fiyat Araştırması")
-                        st.success("Talep başarıyla açıldı!")
-                        st.cache_data.clear()
-                        st.rerun()
-                    else:
-                        st.error("Lütfen REQ Kodu giriniz ve en az bir ürün seçiniz.")
+            req_kodu = st.text_input("REQ Kodu (Örn: TTRA_REQ_17):", key="new_req_kodu")
+            musteri = st.selectbox("Müşteri Seçin:", customer_list, key="new_req_musteri")
+            
+            secilen_urunler = st.multiselect("Talep Edilen Ürünleri Seçin:", product_list, key="new_req_urunler")
+            
+            urun_adetleri = {}
+            if secilen_urunler:
+                st.markdown("📍 **Seçilen Ürünlerin Adetleri:**")
+                for urun in secilen_urunler:
+                    urun_adetleri[urun] = st.number_input(f"{urun} (Adet):", min_value=1, value=1, key=f"req_yeni_{urun}")
+            
+            if st.button("🔥 Talebi Pipeline'a At", use_container_width=True):
+                if req_kodu and urun_adetleri:
+                    add_master_pipeline_record(req_kodu, musteri, urun_adetleri, "1. Fiyat Araştırması")
+                    st.success("Talep başarıyla açıldı!")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("Lütfen REQ Kodu giriniz ve en az bir ürün seçiniz.")
 
         st.markdown("### 📋 Aktif Süreçler")
         if not df_pipe.empty:
@@ -341,18 +339,16 @@ with tab4:
             
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # --- REQ İÇERİĞİ VE BİRİM FİYAT DÜZENLEME FORMU ---
-            with st.form(f"update_form_{req_kodu}"):
-                
+            # --- REQ İÇERİĞİ VE BİRİM FİYAT DÜZENLEME (FORM KALDIRILDI) ---
+            with st.container(border=True):
                 try: saved_costs = json.loads(req.get('Ürün Maliyetleri', '{}'))
                 except: saved_costs = {}
 
-                current_items = list(saved_data.keys()) if 'saved_data' in locals() else list(saved_costs.keys())
-                valid_defaults = [x for x in current_items if x in product_list]
+                current_items = list(saved_costs.keys())
+                combined_product_list = list(set(product_list + current_items)) # Mevcutlar katalogda olmasa bile kaybolmasın
                 
                 st.markdown("#### 📦 REQ İçeriğini (Ürünleri) Düzenle")
-                # İsteğe bağlı olarak mevcut REQ içindeki ürünleri anında değiştirin
-                active_products = st.multiselect("Talep Edilen Ürünleri Ekle / Çıkar:", product_list, default=valid_defaults)
+                active_products = st.multiselect("Talep Edilen Ürünleri Ekle / Çıkar:", combined_product_list, default=current_items, key=f"edit_prod_{req_kodu}")
                 
                 st.markdown("#### 💵 Ürün Adetleri ve Birim Maliyetleri")
                 new_saved_data = {}
@@ -365,8 +361,8 @@ with tab4:
                             old_info = {"adet": 1, "fiyat": float(old_info)} # Eski veri uyumluluğu
                             
                         c_q, c_p = st.columns([1, 1])
-                        n_qty = c_q.number_input(f"{item} - Adet:", value=int(old_info["adet"]), min_value=1, key=f"q_{item}")
-                        n_prc = c_p.number_input(f"{item} - Birim Alış ($):", value=float(old_info["fiyat"]), format="%.2f", min_value=0.0, key=f"p_{item}")
+                        n_qty = c_q.number_input(f"{item} - Adet:", value=int(old_info["adet"]), min_value=1, key=f"q_{req_kodu}_{item}")
+                        n_prc = c_p.number_input(f"{item} - Birim Alış ($):", value=float(old_info["fiyat"]), format="%.2f", min_value=0.0, key=f"p_{req_kodu}_{item}")
                         
                         new_saved_data[item] = {"adet": n_qty, "fiyat": n_prc}
                         toplam_alis += (n_qty * n_prc)
@@ -380,13 +376,13 @@ with tab4:
                 def_loj = float(str(req.get("Gümrük Lojistik", "0")).replace("$", "").replace(",", ""))
                 def_marj = float(str(req.get("Kâr Marjı", "20")).replace("%", ""))
                 
-                lojistik = c1.number_input("Gümrük & Lojistik Masrafı ($):", value=def_loj, format="%.2f")
-                marj = c2.number_input("Kâr Marjı (%):", value=def_marj, format="%.1f")
+                lojistik = c1.number_input("Gümrük & Lojistik Masrafı ($):", value=def_loj, format="%.2f", key=f"loj_{req_kodu}")
+                marj = c2.number_input("Kâr Marjı (%):", value=def_marj, format="%.1f", key=f"marj_{req_kodu}")
                 
                 st.markdown("**İşlem Menüsü:**")
-                next_stage = st.selectbox("Süreci Nereye Taşıyacaksınız?", stages, index=current_idx)
+                next_stage = st.selectbox("Süreci Nereye Taşıyacaksınız?", stages, index=current_idx, key=f"stage_{req_kodu}")
                 
-                if st.form_submit_button("🚀 Kaydet ve Durumu Güncelle", use_container_width=True):
+                if st.button("🚀 Kaydet ve Durumu Güncelle", use_container_width=True, key=f"save_{req_kodu}"):
                     toplam_maliyet = toplam_alis + lojistik
                     nihai_teklif = toplam_maliyet * (1 + (marj / 100))
                     
@@ -425,19 +421,70 @@ with tab5:
                 st.cache_data.clear()
                 st.rerun()
 
+    # O EFSANEVİ ARAYÜZ GERİ GELDİ!
     with col_ai:
-        st.subheader("⚡ Otonom REQ Eşleştirme")
-        req_input = st.text_area("Talep (REQ) Listesini Yapıştırın:", height=140)
+        st.subheader("⚡ Otonom REQ Eşleştirme (Jarvis AI)")
+        req_input = st.text_area("Müşteri Talep (REQ) Listesini Yapıştırın:", height=140, placeholder="Örn:\nEFT E410P Only Propellers set\nGEPRC GR1404 4500KV Motor")
         
-        if st.button("🚀 Eşleştir ve Gmail RFQ Oluştur", use_container_width=True):
+        if st.button("🚀 Eşleştir ve Gmail RFQ Butonlarını Oluştur", use_container_width=True):
             if req_input and not df_suppliers.empty:
-                with st.spinner("Tedarikçiler taranıyor..."):
+                with st.spinner("Tedarikçiler taranıyor ve Gmail taslakları oluşturuluyor..."):
                     suppliers_json = df_suppliers.to_json(orient="records", force_ascii=False)
                     match_results, err_msg = intelligent_match_and_draft_rfqs(req_input, suppliers_json)
+                    
                     if err_msg: st.error(err_msg)
+                    elif not match_results: st.warning("Bu ürünler için tedarikçi havuzunda doğrudan eşleşen bir firma bulunamadı.")
                     else: st.session_state["rfq_match_list"] = match_results
+            elif df_suppliers.empty: st.warning("Tedarikçi havuzunuz şu an boş.")
+            else: st.warning("Lütfen talep listesi girin.")
 
         if "rfq_match_list" in st.session_state and st.session_state["rfq_match_list"]:
             st.markdown("---")
-            for item in st.session_state["rfq_match_list"]:
-                st.markdown(f"**{item.get('talep')}** -> {item.get('tedarikci')} ({item.get('eposta')})")
+            results = st.session_state["rfq_match_list"]
+            
+            # Talebe göre grupla
+            grouped = {}
+            for item in results:
+                t = item.get("talep", "Genel Talep")
+                grouped.setdefault(t, []).append(item)
+
+            for product, sups in grouped.items():
+                with st.container(border=True):
+                    st.markdown(f"#### 🎯 **Talep Kalemi:** `{product}`")
+                    
+                    for idx, s in enumerate(sups):
+                        firma = s.get("tedarikci", "-")
+                        email = s.get("eposta", "").strip()
+                        kisi = s.get("kisi", "Sales Team")
+                        ulke = s.get("ulke", "-")
+                        aciklama = s.get("aciklama", "")
+
+                        subject = f"RFQ - Quotation Request for {product} - OZ Global Trade"
+                        body = (
+                            f"Dear {kisi if kisi else 'Sales Team'},\n\n"
+                            f"We are reaching out from OZ Global Trade regarding the procurement of '{product}'.\n\n"
+                            f"Could you please provide your official quotation including:\n"
+                            f"1. Unit price (EXW / FOB)\n"
+                            f"2. Minimum Order Quantity (MOQ)\n"
+                            f"3. Estimated production / delivery lead time\n\n"
+                            f"We look forward to your prompt response.\n\n"
+                            f"Best regards,\n"
+                            f"OZ Global Trade Team"
+                        )
+
+                        c_info, c_btn = st.columns([3, 1.2])
+                        with c_info:
+                            st.markdown(f"**🏢 {firma}** ({ulke}) &nbsp;•&nbsp; 👤 *{kisi}*")
+                            if email:
+                                st.caption(f"📧 `{email}` | 💡 {aciklama}")
+                            else:
+                                st.caption(f"⚠️ *E-posta kayıtlı değil* | 💡 {aciklama}")
+                        
+                        with c_btn:
+                            if email and "@" in email:
+                                gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={urllib.parse.quote(email)}&su={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
+                                st.link_button("✉️ Gmail'de Gönder", gmail_url, type="primary", use_container_width=True)
+                            else:
+                                st.button("❌ E-Posta Yok", disabled=True, use_container_width=True, key=f"dis_{firma}_{product}_{idx}")
+                        
+                        if idx < len(sups) - 1: st.divider()

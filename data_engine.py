@@ -190,7 +190,6 @@ def add_supplier_to_sheet(kategori, urunler, firma, ulke, kisi, eposta, notlar):
 
 # --- ODOO-KILLER (TEKİL PIPELINE) & VERİTABANI YÖNETİMİ FONKSİYONLARI ---
 
-# DİKKAT: Hatanın çözüldüğü nokta burasıdır. (cache_resource eklendi)
 @st.cache_resource(show_spinner=False)
 def setup_master_sheets():
     spreadsheet = get_sheets_client().open_by_key(SPREADSHEET_KEY)
@@ -240,7 +239,8 @@ def add_product_db(ad, kategori, tedarikci, fiyat, notlar):
 
 def add_master_pipeline_record(req_kodu, musteri, urun_adetleri_dict, statu):
     icerik_str = ", ".join([f"{urun} ({adet} Adet)" for urun, adet in urun_adetleri_dict.items()])
-    urunler_json = json.dumps({urun: {"adet": adet, "fiyat": 0.0} for urun, adet in urun_adetleri_dict.items()}, ensure_ascii=False)
+    # Yeni JSON şemasına 'gumruk' eklendi
+    urunler_json = json.dumps({urun: {"adet": adet, "fiyat": 0.0, "gumruk": 0.0} for urun, adet in urun_adetleri_dict.items()}, ensure_ascii=False)
     
     get_sheets_client().open_by_key(SPREADSHEET_KEY).worksheet("REQ_PIPELINE").append_row(
         [req_kodu, musteri, icerik_str, "0.0", "0.0", "20", "0.0", statu, datetime.today().strftime("%d.%m.%Y"), urunler_json]

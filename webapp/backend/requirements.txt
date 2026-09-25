@@ -1,0 +1,18 @@
+# Jarvis Web API'nin çalışma zamanı bağımlılıkları (Render/VPS'te tek başına kurulabilir; kök requirements.txt'e —
+# Streamlit, plotly, gspread… — GEREK YOK). Kurulum: pip install -r webapp/backend/requirements.txt
+fastapi>=0.115
+uvicorn[standard]>=0.30
+itsdangerous>=2.2            # oturum çerezi imzası (Starlette SessionMiddleware)
+
+# jarvis/ paketinin bağımlılıkları (services, analytics, PDF üretimi, AI asistanı)
+sqlalchemy>=2.0
+psycopg[binary]>=3.1         # Supabase (Postgres)
+bcrypt>=4.0
+pandas>=2.0.0
+openpyxl>=3.1.2              # Excel dışa aktarma
+reportlab>=4.0               # teklif / teslimat PDF'i
+requests>=2.31.0             # canlı döviz kuru, DHL takip
+python-dotenv>=1.0.0
+anthropic>=0.40.0            # Jarvis AI (Claude)
+google-generativeai>=0.8.3   # sesi yazıya çevirme / tedarikçi eşleştirme (Gemini)
+edge-tts                     # sesli yanıt

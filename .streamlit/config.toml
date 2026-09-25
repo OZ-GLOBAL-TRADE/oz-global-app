@@ -1,0 +1,6 @@
+# Prod guvenligi: giris ekrani kimlik dogrulamasi olmadan herkesin gorebilecegi tek sayfadir;
+# yakalanmamis bir hata orada Python hata izini (dosya yollari, kutuphane surumleri) tarayicida
+# gostermesin diye kapatildi. Yerelde ayrintili hata izi gormek icin:
+#   streamlit run jarvis_app.py --client.showErrorDetails=full
+[client]
+showErrorDetails = "none"

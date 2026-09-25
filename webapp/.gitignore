@@ -1,0 +1,13 @@
+# Backend
+backend/__pycache__/
+backend/.venv/
+
+# Frontend (Next.js)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/next-env.d.ts
+
+# Derleme çýktýsý (build_web.cmd): cPanel'e yüklenecek zip
+dist/

@@ -1,0 +1,9 @@
+# local database and secrets
+*.db
+.env
+.env.txt
+service_account.json
+.streamlit/secrets.toml
+__pycache__/
+.pytest_cache/
+.claude/

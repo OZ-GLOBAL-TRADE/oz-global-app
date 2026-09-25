@@ -1,0 +1,28 @@
+# Jarvis arayüzü (statik dosyalar) — Apache/cPanel. Bu dosya derlemede out/ klasörüne kopyalanır.
+
+# 1) Her zaman HTTPS (oturum çerezi yalnızca HTTPS'de çalışır)
+RewriteEngine On
+RewriteCond %{HTTPS} !=on
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# 2) Temel güvenlik başlıkları
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  # Sayfalar (HTML) her zaman güncel gelsin: yeni sürüm yüklenince kullanıcılar eski ekranda kalmasın
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+  # JS/CSS dosyalarının adı içeriğin özetini taşır; değişince adı da değişir → güvenle önbelleğe alınabilir
+  <FilesMatch "\.(js|css|woff2)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+</IfModule>
+
+# 3) Dizin listelemeyi kapat
+Options -Indexes
+
+# 4) Bulunamayan adres → Next'in ürettiği 404 sayfası
+ErrorDocument 404 /404.html

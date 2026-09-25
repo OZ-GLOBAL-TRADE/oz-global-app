@@ -1,0 +1,27 @@
+# Render Blueprint (isteğe bağlı): Render → New → Blueprint ile bu depoyu seçin. Ayrıntılı anlatım: webapp/DEPLOY.md
+# Gizli değerler (sync: false) panelden elle girilir; depoya yazılmaz.
+services:
+  - type: web
+    name: jarvis-api
+    runtime: python
+    plan: starter            # free plan 15 dk hareketsizlikte uyur (ilk giriş ~1 dk bekler); canlı için starter önerilir
+    buildCommand: pip install -r webapp/backend/requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --app-dir webapp/backend
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.7
+      - key: JARVIS_DEV_MODE
+        value: "0"
+      - key: WEB_ORIGINS
+        value: https://erp.ozglobaltrade.com
+      - key: SESSION_SECRET
+        generateValue: true  # Render rastgele, uzun bir değer üretir
+      - key: DATABASE_URL
+        sync: false
+      - key: CLAUDE_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DHL_API_KEY
+        sync: false
